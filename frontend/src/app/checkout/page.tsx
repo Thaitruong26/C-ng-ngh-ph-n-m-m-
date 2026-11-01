@@ -487,7 +487,7 @@ export default function CheckoutPage() {
                                 alt={item.productName}
                                 onError={(e) => {
                                   (e.currentTarget as HTMLImageElement).src =
-                                    "/file.svg";
+                                    "/img/ca-phe-sua.jpg";
                                 }}
                                 className="w-14 h-14 rounded-xl object-cover border border-stone-200 bg-stone-100 shrink-0"
                               />
