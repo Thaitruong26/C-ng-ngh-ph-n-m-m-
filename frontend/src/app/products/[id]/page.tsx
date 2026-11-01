@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, api, formatVND } from "@/lib/api";
 import { MAX_QTY_PER_ITEM, MAX_TOPPINGS, type Size, itemUnitPrice, useCartStore } from "@/store/cart";
+import { useStockStore, checkIsAvailable } from "@/store/stock-store";
 
 type SizeOption = { size: Size; surcharge: number };
 type Topping = { id: number; name: string; price: number };
@@ -39,6 +40,8 @@ function ProductDetailContent() {
 }
 
 function ProductOptions({ product }: { product: ProductDetail }) {
+  const availability = useStockStore((s) => s.availability);
+  const isAvailable = checkIsAvailable(product, availability);
   const addItem = useCartStore((s) => s.addItem);
   const [size, setSize] = useState<Size>(product.sizes[0]?.size ?? "S");
   const [selected, setSelected] = useState<number[]>([]);
@@ -69,10 +72,44 @@ function ProductOptions({ product }: { product: ProductDetail }) {
 
   return <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
     <Link href="/menu" className="text-sm font-semibold text-amber-900 hover:underline">← Quay lại thực đơn</Link>
-    <div className="mt-5 grid gap-8 rounded-3xl border border-stone-200 bg-white p-5 shadow-sm md:grid-cols-2 md:p-8">
-      <div className="flex min-h-72 items-center justify-center overflow-hidden rounded-2xl bg-amber-50">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={product.imageUrl || FALLBACK_IMG} alt={product.name} className="h-full max-h-[420px] w-full object-cover" onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }} />
+    <div className="mt-5 grid gap-8 rounded-3xl border border-stone-200/80 bg-white p-6 shadow-sm md:grid-cols-2 md:p-10 md:items-start">
+      {/* Cột trái: Khung ảnh nghệ thuật chuẩn tỷ lệ & Bảng cam kết */}
+      <div className="space-y-6 md:sticky md:top-24">
+        <div className="relative aspect-4/3 sm:aspect-square w-full overflow-hidden rounded-2xl bg-stone-100 shadow-inner group border border-stone-200/80">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={product.imageUrl || FALLBACK_IMG}
+            alt={product.name}
+            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+            onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }}
+          />
+          {/* Huy hiệu phân loại */}
+          <span className="absolute top-3.5 left-3.5 rounded-full bg-white/90 backdrop-blur-md px-3.5 py-1 text-xs font-bold text-amber-900 shadow-sm border border-stone-200/50">
+            {product.category}
+          </span>
+          {/* Huy hiệu tình trạng */}
+          <span className={`absolute top-3.5 right-3.5 rounded-full px-3.5 py-1 text-xs font-bold shadow-sm backdrop-blur-md text-white ${isAvailable ? "bg-emerald-700/90" : "bg-red-600/90"}`}>
+            {isAvailable ? "● Đang phục vụ" : "● Tạm hết"}
+          </span>
+        </div>
+
+        {/* Bảng cam kết chuẩn vị BrewLite tạo sự cân đối */}
+        <div className="rounded-2xl border border-amber-100 bg-[#fdfbf7] p-5">
+          <div className="flex items-center gap-2 text-sm font-bold text-amber-900">
+            <span className="text-base">☕</span> Cam kết chuẩn vị BrewLite
+          </div>
+          <ul className="mt-3 space-y-2 text-xs text-stone-600">
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-700 font-bold">✓</span> 100% nguyên liệu tươi mới mỗi ngày
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-700 font-bold">✓</span> Pha chế thủ công trực tiếp ngay khi nhận đơn
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-700 font-bold">✓</span> Giữ trọn hương vị và nhiệt độ khi giao đến tay bạn
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div>
@@ -80,7 +117,7 @@ function ProductOptions({ product }: { product: ProductDetail }) {
         <h1 className="mt-2 text-3xl font-extrabold">{product.name}</h1>
         <p className="mt-1 text-sm text-stone-500">Giá gốc (size S): {formatVND(product.price)}</p>
         <p className="mt-3 leading-7 text-stone-600">{product.description || "Thức uống được pha chế tươi ngon tại BrewLite."}</p>
-        <p className={`mt-2 text-sm font-medium ${product.inStock ? "text-emerald-700" : "text-red-600"}`}>{product.inStock ? `Còn ${product.stock} phần` : "Tạm hết hàng"}</p>
+        <p className={`mt-2 text-sm font-medium ${isAvailable ? "text-emerald-700" : "text-red-600"}`}>{isAvailable ? `Còn ${product.stock} phần` : "Tạm hết hàng"}</p>
 
         <section className="mt-7" aria-labelledby="size-heading">
           <h2 id="size-heading" className="font-bold">Chọn size</h2>
@@ -135,13 +172,22 @@ function ProductOptions({ product }: { product: ProductDetail }) {
             <strong className="text-2xl text-amber-900" aria-live="polite">{formatVND(unitPrice * quantity)}</strong>
           </div>
           <p className="mt-2 text-xs leading-5 text-stone-500">Giá hiển thị là giá dự kiến. Backend sẽ tính lại giá chính thức khi tạo đơn.</p>
-          <button disabled={!product.inStock} onClick={handleAdd} className="mt-5 w-full rounded-xl bg-amber-800 px-5 py-3.5 font-bold text-white hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-stone-300">
-            {product.inStock ? "Thêm vào giỏ hàng" : "Sản phẩm tạm hết hàng"}
+          <button disabled={!isAvailable} onClick={handleAdd} className="mt-5 w-full rounded-xl bg-amber-800 px-5 py-3.5 font-bold text-white hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-stone-300">
+            {isAvailable ? "Thêm vào giỏ hàng" : "Sản phẩm tạm hết hàng"}
           </button>
-          {added && <div role="status" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            <span>{added}</span>
-            <Link href="/cart" className="font-semibold underline">Xem giỏ hàng →</Link>
-          </div>}
+          {added && (
+            <div className="mt-4 space-y-2.5">
+              <div role="status" className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm font-medium text-emerald-800">
+                ✓ {added}
+              </div>
+              <Link
+                href="/cart"
+                className="w-full flex items-center justify-center rounded-xl bg-amber-800 px-5 py-3.5 font-bold text-white shadow-sm hover:bg-amber-900 transition-colors cursor-pointer"
+              >
+                Xem giỏ hàng →
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -57,12 +57,7 @@ export default function Home() {
               ↗
             </span>
           </Link>
-          <Link
-            href="/checkout"
-            className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-6 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-100"
-          >
-            Thanh toán (FE3)
-          </Link>
+          
         </div>
 
         {/* Trust badges */}

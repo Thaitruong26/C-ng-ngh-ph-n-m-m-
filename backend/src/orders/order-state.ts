@@ -14,7 +14,7 @@ import { OrderStatus } from '../generated/prisma/client.js';
 export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: [OrderStatus.PAID, OrderStatus.PAYMENT_FAILED, OrderStatus.CANCELLED],
   PAYMENT_FAILED: [OrderStatus.PAID, OrderStatus.CANCELLED],
-  PAID: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
+  PAID: [OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.CANCELLED],
   PREPARING: [OrderStatus.READY],
   READY: [OrderStatus.COMPLETED],
   COMPLETED: [],

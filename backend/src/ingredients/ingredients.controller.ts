@@ -31,25 +31,23 @@ import { AddIngredientStockDto } from './dto/add-ingredient-stock.dto.js';
 import { AdjustIngredientStockDto } from './dto/adjust-ingredient-stock.dto.js';
 
 @ApiTags('Ingredients')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.BARISTA)
 @Controller('ingredients')
 export class IngredientsController {
   constructor(private readonly ingredientsService: IngredientsService) {}
 
-  /** 4.1. GET /ingredients */
+  /** 4.1. GET /ingredients (Công khai hoặc Barista) */
   @Get()
-  @ApiOperation({ summary: 'Lấy danh sách nguyên liệu (Barista)' })
+  @ApiOperation({ summary: 'Lấy danh sách nguyên liệu và tồn kho' })
   @ApiResponse({ status: 200, description: 'Danh sách nguyên liệu thành công' })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Chỉ Barista có quyền truy cập' })
   findAll(@Query() query: GetIngredientsQueryDto) {
     return this.ingredientsService.findAll(query);
   }
 
   /** 4.2. POST /ingredients */
   @Post()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BARISTA)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Tạo mới nguyên liệu (Barista)' })
   @ApiResponse({ status: 201, description: 'Tạo nguyên liệu thành công' })
@@ -63,6 +61,9 @@ export class IngredientsController {
 
   /** 4.3. PATCH /ingredients/:id */
   @Patch(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BARISTA)
   @ApiOperation({ summary: 'Cập nhật thông tin nguyên liệu (Barista)' })
   @ApiParam({ name: 'id', description: 'ID nguyên liệu', example: 1 })
   @ApiResponse({ status: 200, description: 'Cập nhật thành công' })
@@ -72,7 +73,7 @@ export class IngredientsController {
     return this.ingredientsService.update(id, dto);
   }
 
-  /** 4.4. POST /ingredients/:id/stock */
+  /** 4.4. POST /ingredients/:id/stock (Nhập kho từ Quầy Barista) */
   @Post(':id/stock')
   @ApiOperation({ summary: 'Nhập thêm tồn kho nguyên liệu (Barista)' })
   @ApiParam({ name: 'id', description: 'ID nguyên liệu', example: 1 })
@@ -89,6 +90,9 @@ export class IngredientsController {
 
   /** 4.5. POST /ingredients/:id/adjust */
   @Post(':id/adjust')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BARISTA)
   @ApiOperation({ summary: 'Kiểm kê hoặc ghi nhận hao hụt nguyên liệu (Barista)' })
   @ApiParam({ name: 'id', description: 'ID nguyên liệu', example: 1 })
   @ApiResponse({ status: 200, description: 'Điều chỉnh tồn kho thành công' })
@@ -104,6 +108,9 @@ export class IngredientsController {
 
   /** 4.6. GET /ingredients/:id/movements */
   @Get(':id/movements')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BARISTA)
   @ApiOperation({ summary: 'Nhật ký biến động tồn kho của một nguyên liệu (Barista)' })
   @ApiParam({ name: 'id', description: 'ID nguyên liệu', example: 1 })
   @ApiResponse({ status: 200, description: 'Lấy nhật ký thành công' })

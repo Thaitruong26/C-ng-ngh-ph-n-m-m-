@@ -235,8 +235,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
    * Lịch sử đơn hàng của người dùng hiện tại (chỉ lấy đơn của req.user.id), sắp xếp mới nhất trước.
    */
   async getOrdersMe(userId: number, query: GetOrdersQueryDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 10;
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 10;
     const skip = (page - 1) * limit;
 
     const where: any = { userId };
@@ -252,8 +252,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          items: {
-            select: { qty: true },
+          items: true,
+          payments: {
+            select: { id: true, method: true, status: true, amount: true, createdAt: true },
           },
         },
       }),
@@ -265,8 +266,24 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         id: order.id,
         code: `#${order.id}`,
         status: order.status,
+        subtotal: order.subtotal,
+        discountAmount: order.discountAmount,
         total: order.total,
+        promoCode: order.promoCode,
+        pointsEarned: order.pointsEarned,
         itemCount,
+        items: order.items.map((i) => ({
+          id: i.id,
+          productId: i.productId,
+          productName: i.productName,
+          size: i.size,
+          qty: i.qty,
+          unitPrice: i.unitPrice,
+          lineTotal: i.lineTotal,
+          toppings: (i.toppings as any) || [],
+          note: i.note,
+        })),
+        payments: order.payments,
         createdAt: order.createdAt.toISOString(),
       };
     });
@@ -594,11 +611,11 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    let statuses: OrderStatus[] = [OrderStatus.PAID, OrderStatus.PREPARING, OrderStatus.READY];
+    let statuses: OrderStatus[] = [OrderStatus.PAID, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.COMPLETED];
     if (query.status?.trim()) {
       statuses = query.status.split(',').map((s) => s.trim()) as OrderStatus[];
     }

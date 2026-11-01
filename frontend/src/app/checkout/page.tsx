@@ -3,12 +3,12 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   createOrderApi,
   createPaymentApi,
   formatVND,
-  getAccessToken,
 } from "@/lib/api";
 import {
   createMockOrderFromCart,
@@ -36,6 +36,7 @@ function generateUUID(): string {
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const {
     items,
     promoCode,
@@ -48,7 +49,7 @@ export default function CheckoutPage() {
 
   const [mounted, setMounted] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("WALLET");
-  const [mockResult, setMockResult] = useState<MockPaymentResult>("SUCCESS");
+  const mockResult: MockPaymentResult = "SUCCESS";
   const [useMockMode, setUseMockMode] = useState<boolean>(false);
 
   // Đơn hàng đã tạo từ POST /orders (giữ lại khi lỗi 402 để thử thanh toán lại không tạo trùng đơn)
@@ -70,14 +71,12 @@ export default function CheckoutPage() {
     replayed?: boolean;
   } | null>(null);
   const [replayNotice, setReplayNotice] = useState<string | null>(null);
-  const [hasToken, setHasToken] = useState<boolean>(false);
-
+  
   useEffect(() => {
     const timer = setTimeout(() => {
       setMounted(true);
       setIdempotencyKey(generateUUID());
-      setHasToken(Boolean(getAccessToken()));
-    }, 0);
+          }, 0);
     return () => clearTimeout(timer);
   }, []);
 
@@ -91,14 +90,7 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleSelectMockResult = (result: MockPaymentResult) => {
-    if (result !== mockResult) {
-      setMockResult(result);
-      setIdempotencyKey(generateUUID());
-      setErrorState(null);
-      setReplayNotice(null);
-    }
-  };
+
 
   // Số tiền hiển thị: ưu tiên tuyệt đối số chính thức từ server trả về (SOP: Giá do server tính)
   const clientSubtotal = mounted ? getSubtotal() : 0;
@@ -150,8 +142,8 @@ export default function CheckoutPage() {
           items: items.map((item) => ({
             productId: item.productId,
             size: item.size,
-            toppingIds: item.toppings.map((t) => t.id),
-            quantity: item.quantity,
+            toppingIds: (item.toppings || []).map((t) => t.id),
+            quantity: item.quantity ?? item.qty ?? 1,
             ...(item.note ? { note: item.note } : {}),
           })),
           ...(promoCode ? { promoCode: promoCode.trim().toUpperCase() } : {}),
@@ -307,51 +299,6 @@ export default function CheckoutPage() {
       </header>
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8">
-        {/* Thanh công cụ chế độ chạy & kiểm thử cho nhóm / giảng viên */}
-        <div className="mb-6 p-4 rounded-2xl bg-amber-50/90 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-600" />
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-900">
-                Bảng điều khiển Thanh toán (FE3)
-              </span>
-            </div>
-            <p className="text-xs text-amber-800 mt-1">
-              Mặc định gọi API thật (<code className="font-mono">POST /orders</code> &{" "}
-              <code className="font-mono">POST /payments</code>). Bật{" "}
-              <strong>Chế độ Dữ liệu giả</strong> nếu chưa chạy Backend.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setUseMockMode((prev) => !prev);
-                setErrorState(null);
-              }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
-                useMockMode
-                  ? "bg-amber-800 text-white border-amber-900 shadow-sm"
-                  : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
-              }`}
-            >
-              {useMockMode
-                ? "🟢 Đang bật: Dữ liệu giả (Mock API)"
-                : "🌐 Đang bật: API thật (Backend)"}
-            </button>
-
-            {!hasToken && !useMockMode && (
-              <Link
-                href="/login"
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-100 text-red-800 border border-red-200 hover:bg-red-200 transition-colors"
-              >
-                ⚠️ Chưa có JWT Token (Đăng nhập)
-              </Link>
-            )}
-          </div>
-        </div>
-
         {/* Nếu giỏ hàng trống và chưa có đơn */}
         {items.length === 0 && !currentOrder ? (
           <div className="bg-white rounded-2xl border border-stone-200 p-10 text-center max-w-lg mx-auto shadow-sm">
@@ -556,74 +503,6 @@ export default function CheckoutPage() {
                   >
                     Đặt lại dữ liệu mẫu
                   </button>
-                </div>
-              </section>
-
-              {/* Khu vực kỹ thuật: Idempotency-Key & Giả lập lỗi 402 (Mock Payment Result) */}
-              <section className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-stone-700 mb-3">
-                  Cấu hình Idempotency & Giả lập Cổng thanh toán (Task 8 & 10)
-                </h2>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-stone-600 mb-1.5">
-                      Kết quả giả lập cổng thanh toán (<code className="font-mono">mockResult</code> gửi kèm{" "}
-                      <code className="font-mono">POST /payments</code>):
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => handleSelectMockResult("SUCCESS")}
-                        className={`px-3.5 py-2.5 rounded-xl border text-left text-xs font-medium transition-all cursor-pointer ${
-                          mockResult === "SUCCESS"
-                            ? "border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-600"
-                            : "border-stone-200 hover:bg-stone-50 text-stone-700"
-                        }`}
-                      >
-                        <div className="font-bold">✅ SUCCESS (Mặc định)</div>
-                        <div className="text-stone-500 mt-0.5">
-                          Thanh toán thành công (201), đơn chuyển sang PAID, xóa giỏ
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSelectMockResult("FAILED")}
-                        className={`px-3.5 py-2.5 rounded-xl border text-left text-xs font-medium transition-all cursor-pointer ${
-                          mockResult === "FAILED"
-                            ? "border-red-600 bg-red-50 text-red-950 ring-1 ring-red-600"
-                            : "border-stone-200 hover:bg-stone-50 text-stone-700"
-                        }`}
-                      >
-                        <div className="font-bold">❌ FAILED (Demo lỗi 402)</div>
-                        <div className="text-stone-500 mt-0.5">
-                          Trả về mã 402 PAYMENT_FAILED, giữ nguyên giỏ hàng
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-stone-700">
-                        Header <code className="font-mono">Idempotency-Key</code> hiện tại:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setIdempotencyKey(generateUUID())}
-                        className="text-xs font-semibold text-amber-800 hover:text-amber-900 cursor-pointer"
-                      >
-                        🔄 Sinh UUID mới
-                      </button>
-                    </div>
-                    <p className="font-mono text-xs text-stone-800 bg-white px-2.5 py-1.5 rounded-lg border border-stone-200 mt-1.5 break-all">
-                      {idempotencyKey}
-                    </p>
-                    <p className="text-[11px] text-stone-500 mt-1.5">
-                      Sinh bằng <code className="font-mono">crypto.randomUUID()</code> một lần cho mỗi lần bấm xác nhận, giữ nguyên nếu bấm lại.
-                    </p>
-                  </div>
                 </div>
               </section>
             </div>

@@ -45,7 +45,7 @@ npm run start:dev
 * **Swagger Docs:** http://localhost:4000/api/docs
 * **Prisma Studio (Xem DB):** `npx prisma studio` (truy cập http://localhost:5555)
 * **Chạy Unit Test:** `npm test`
-
+ưadd
 ### 3. Chạy Frontend (Terminal 2)
 ```bash
 cd frontend

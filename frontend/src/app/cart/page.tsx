@@ -39,23 +39,27 @@ function describePromoError(err: unknown): string {
       ? err.message
       : "Không kiểm tra được mã giảm giá.";
   }
+  // Nếu message từ backend đã chi tiết thì ưu tiên hiển thị trực tiếp
+  if (err.message && err.message !== "Dữ liệu không hợp lệ" && err.message !== "Validation failed") {
+    return err.message;
+  }
   const detail = Array.isArray(err.details)
     ? (err.details[0] as Record<string, unknown> | undefined)
-    : undefined;
+    : (err.details as Record<string, unknown> | undefined);
   switch (err.code) {
     case "PROMO_NOT_FOUND":
       return "Mã giảm giá không tồn tại hoặc không còn hoạt động.";
     case "PROMO_EXPIRED": {
       const exp =
         typeof detail?.expiresAt === "string"
-          ? ` (${new Date(detail.expiresAt).toLocaleDateString("vi-VN")})`
+          ? ` (hết hạn ngày ${new Date(detail.expiresAt).toLocaleDateString("vi-VN")})`
           : "";
       return `Mã giảm giá đã hết hạn${exp}.`;
     }
     case "PROMO_NOT_STARTED": {
       const start =
         typeof detail?.startsAt === "string"
-          ? ` từ ${new Date(detail.startsAt).toLocaleDateString("vi-VN")}`
+          ? ` (bắt đầu từ ${new Date(detail.startsAt).toLocaleDateString("vi-VN")})`
           : "";
       return `Mã giảm giá chưa đến thời gian áp dụng${start}.`;
     }
@@ -68,12 +72,12 @@ function describePromoError(err: unknown): string {
           : null;
       return min
         ? `Đơn hàng chưa đạt giá trị tối thiểu ${min} để dùng mã này.`
-        : err.message;
+        : err.message || "Đơn hàng chưa đạt giá trị tối thiểu.";
     }
     case "UNAUTHORIZED":
       return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
     default:
-      return err.message;
+      return err.message || "Không thể áp dụng mã giảm giá lúc này.";
   }
 }
 

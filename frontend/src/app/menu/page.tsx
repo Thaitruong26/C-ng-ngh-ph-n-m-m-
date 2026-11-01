@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api/client";
 import { getProducts } from "@/lib/api/products";
 import { getDevelopmentProducts } from "@/lib/api/dev-products";
@@ -10,6 +10,7 @@ import type { Product } from "@/lib/api/types";
 import { ProductImage } from "@/components/products/product-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { ProductCardSkeleton } from "@/components/ui/loading-state";
+import { useStockStore, checkIsAvailable } from "@/store/stock-store";
 
 const formatVnd = (price: number) => new Intl.NumberFormat("vi-VN").format(price);
 
@@ -261,6 +262,19 @@ export default function MenuPage() {
   const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
   const [showFixtures, setShowFixtures] = useState(false);
+  const availability = useStockStore((state) => state.availability);
+  const hydrateStock = useStockStore((state) => state.hydrate);
+
+  useEffect(() => {
+    hydrateStock();
+    const sync = () => hydrateStock();
+    window.addEventListener("brewlite:stock-availability-change", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("brewlite:stock-availability-change", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, [hydrateStock]);
 
   const query = useQuery({
     queryKey: ["products", { category, page: 1, limit: 20 }],
@@ -277,21 +291,23 @@ export default function MenuPage() {
 
   // Lọc theo search ở client (API không cần search cho Sprint 1)
   const products = useMemo(() => {
-    const allProducts = result?.data ?? [];
+    const allProducts = (result?.data ?? []).filter((p) =>
+      checkIsAvailable(p, availability),
+    );
     return search.trim()
       ? allProducts.filter((p) =>
           p.name.toLowerCase().includes(search.trim().toLowerCase()),
         )
       : allProducts;
-  }, [result, search]);
+  }, [result, search, availability]);
 
   const categories = useMemo(() => {
     const all = [
       ...(query.data?.data ?? []),
       ...(showFixtures ? getDevelopmentProducts().data : []),
-    ];
+    ].filter((p) => checkIsAvailable(p, availability));
     return Array.from(new Set(all.map((p) => p.category)));
-  }, [query.data, showFixtures]);
+  }, [query.data, showFixtures, availability]);
 
   const isLoading = !showFixtures && query.isPending;
   const isError = !showFixtures && query.isError;

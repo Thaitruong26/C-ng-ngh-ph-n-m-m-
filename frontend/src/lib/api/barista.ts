@@ -82,3 +82,33 @@ export function addProductStock(
     body: { quantity, note },
   });
 }
+
+export interface BackendIngredient {
+  id: number;
+  name: string;
+  unit: string;
+  stock: number;
+  lowThreshold: number;
+  low: boolean;
+}
+
+export function getIngredientsStock(page = 1, limit = 50) {
+  return apiRequest<PaginatedResponse<BackendIngredient>>(
+    `/ingredients?page=${page}&limit=${limit}`,
+    {
+      authenticated: false,
+    },
+  );
+}
+
+export function addIngredientStock(
+  ingredientId: number,
+  quantity: number,
+  note?: string,
+) {
+  return apiRequest<BackendIngredient>(`/ingredients/${ingredientId}/stock`, {
+    method: "POST",
+    authenticated: true,
+    body: { quantity, note },
+  });
+}

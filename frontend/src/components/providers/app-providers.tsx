@@ -1,18 +1,24 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth-store";
 
 function AuthEvents() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const hydrate = useAuthStore((state) => state.hydrate);
 
   useEffect(() => {
     hydrate();
 
-    const sync = () => hydrate();
+    const sync = () => {
+      hydrate();
+      // Xóa và làm mới cache query để tài khoản mới không dùng lại cache cũ của tài khoản trước
+      queryClient.clear();
+      queryClient.invalidateQueries();
+    };
 
     const unauthorized = () => {
       const next = `${window.location.pathname}${window.location.search}`;
@@ -26,7 +32,7 @@ function AuthEvents() {
       window.removeEventListener("brewlite:auth-change", sync);
       window.removeEventListener("brewlite:unauthorized", unauthorized);
     };
-  }, [hydrate, router]);
+  }, [hydrate, queryClient, router]);
 
   return null;
 }
@@ -37,9 +43,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30_000,
+            staleTime: 5_000,
             retry: 1,
-            refetchOnWindowFocus: false,
+            refetchOnWindowFocus: true,
           },
         },
       }),

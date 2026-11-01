@@ -19,6 +19,25 @@ export const API_BASE = API_BASE_URL;
  */
 export function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
+
+  // 1. Ưu tiên sessionStorage của tab hiện tại (mỗi tab độc lập)
+  try {
+    const sessionToken =
+      window.sessionStorage.getItem("brewlite_access_token") ||
+      window.sessionStorage.getItem("accessToken") ||
+      window.sessionStorage.getItem("token");
+    if (sessionToken) return sessionToken;
+
+    const sessionAuth = window.sessionStorage.getItem("brewlite.auth");
+    if (sessionAuth) {
+      const parsed = JSON.parse(sessionAuth) as { accessToken?: string };
+      if (parsed?.accessToken) return parsed.accessToken;
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2. Dự phòng localStorage
   const directToken =
     window.localStorage.getItem("accessToken") ||
     window.localStorage.getItem("token") ||
@@ -26,7 +45,6 @@ export function getAccessToken(): string | null {
     window.localStorage.getItem("brewlite_token");
   if (directToken) return directToken;
 
-  // Kiểm tra trường hợp lưu trong Zustand persist (auth-storage hoặc brewlite.auth)
   try {
     const authStorage = window.localStorage.getItem("auth-storage");
     if (authStorage) {
@@ -63,25 +81,60 @@ export type User = {
 
 export function saveSession(token: string, user: User) {
   if (typeof window === "undefined") return;
-  localStorage.setItem("brewlite_access_token", token);
-  localStorage.setItem("accessToken", token);
-  localStorage.setItem("brewlite_user", JSON.stringify(user));
-  localStorage.setItem(
-    "brewlite.auth",
-    JSON.stringify({ accessToken: token, user }),
-  );
+  const payload = JSON.stringify({ accessToken: token, user });
+
+  // Lưu sessionStorage riêng từng tab
+  try {
+    window.sessionStorage.setItem("brewlite_access_token", token);
+    window.sessionStorage.setItem("accessToken", token);
+    window.sessionStorage.setItem("brewlite_user", JSON.stringify(user));
+    window.sessionStorage.setItem("brewlite.auth", payload);
+  } catch {}
+
+  // Lưu localStorage
+  try {
+    localStorage.setItem("brewlite_access_token", token);
+    localStorage.setItem("accessToken", token);
+    localStorage.setItem("brewlite_user", JSON.stringify(user));
+    localStorage.setItem("brewlite.auth", payload);
+  } catch {}
 }
 
 export function clearSession() {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("brewlite_access_token");
-  localStorage.removeItem("accessToken");
-  localStorage.removeItem("brewlite_user");
-  localStorage.removeItem("brewlite.auth");
+  try {
+    window.sessionStorage.removeItem("brewlite_access_token");
+    window.sessionStorage.removeItem("accessToken");
+    window.sessionStorage.removeItem("token");
+    window.sessionStorage.removeItem("brewlite_user");
+    window.sessionStorage.removeItem("brewlite.auth");
+  } catch {}
+
+  try {
+    localStorage.removeItem("brewlite_access_token");
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("token");
+    localStorage.removeItem("brewlite_user");
+    localStorage.removeItem("brewlite.auth");
+  } catch {}
 }
 
 export function getCachedUser(): User | null {
   if (typeof window === "undefined") return null;
+
+  // 1. Ưu tiên sessionStorage
+  try {
+    const sessionUserStr = window.sessionStorage.getItem("brewlite_user");
+    if (sessionUserStr) return JSON.parse(sessionUserStr) as User;
+
+    const sessionAuth = window.sessionStorage.getItem("brewlite.auth");
+    if (sessionAuth) {
+      const parsed = JSON.parse(sessionAuth) as { user?: User };
+      if (parsed?.user) return parsed.user;
+    }
+  } catch {}
+
+  // 2. Dự phòng localStorage
   const raw = localStorage.getItem("brewlite_user");
   if (raw) {
     try {

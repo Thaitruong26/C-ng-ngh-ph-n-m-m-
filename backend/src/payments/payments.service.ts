@@ -144,6 +144,21 @@ export class PaymentsService {
       amount: order.total,
       method: dto.method,
       status: success ? 'SUCCESS' : 'FAILED',
+      payment: {
+        id: payment.id,
+        orderId: order.id,
+        amount: order.total,
+        method: dto.method,
+        status: success ? 'SUCCESS' : 'FAILED',
+        providerRef: null,
+      },
+      order: {
+        id: order.id,
+        code: '#' + order.id,
+        status: success ? 'PAID' : 'PAYMENT_FAILED',
+        total: order.total,
+        pointsEarned: Math.floor(order.total / 1000),
+      },
     };
 
     const result = await this.prisma.$transaction(async (tx) => {

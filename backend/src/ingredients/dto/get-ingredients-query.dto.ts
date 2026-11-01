@@ -21,11 +21,11 @@ export class GetIngredientsQueryDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ description: 'Số lượng phần tử mỗi trang', default: 20, maximum: 50, example: 20 })
+  @ApiPropertyOptional({ description: 'Số lượng phần tử mỗi trang', default: 50, maximum: 200, example: 50 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50)
-  limit?: number = 20;
+  @Max(200)
+  limit?: number = 50;
 }

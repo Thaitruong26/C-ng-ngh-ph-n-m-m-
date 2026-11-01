@@ -40,6 +40,19 @@ const STATUS_BADGE_MAP: Record<
   },
 };
 
+const SIMPLIFIED_STEPS = [
+  { key: "preparing", label: "Đang pha chế", icon: "☕", sub: "Quầy đang làm đồ uống" },
+  { key: "ready", label: "Mời lấy nước", icon: "🔔", sub: "Đồ uống đã pha xong" },
+  { key: "completed", label: "Hoàn tất", icon: "✓", sub: "Đã giao cho bạn" },
+];
+
+function getSimplifiedStepIndex(status: string): number {
+  if (status === "READY") return 1;
+  if (status === "COMPLETED") return 2;
+  if (status === "CANCELLED" || status === "PAYMENT_FAILED") return -1;
+  return 0; // PAID, PREPARING, PENDING
+}
+
 const ORDER_STEPS: OrderStatus[] = [
   "PENDING",
   "PAID",
@@ -106,35 +119,48 @@ export function OrderConfirmationView({ orderId }: { orderId: string }) {
 
   useEffect(() => {
     let ignore = false;
-    async function loadData() {
+    let timer: any = null;
+
+    async function loadData(isPolling = false) {
       try {
         const data = await getOrderByIdApi(orderId);
         if (!ignore) {
           setOrder(data);
           setError(null);
           setIsUsingMockData(false);
-          setIsLoading(false);
+          if (!isPolling) setIsLoading(false);
+
+          // Thăm dò tự động mỗi 3 giây để cập nhật tiến trình pha chế từ Barista
+          if (data.status !== "COMPLETED" && data.status !== "CANCELLED") {
+            timer = setTimeout(() => {
+              void loadData(true);
+            }, 3000);
+          }
         }
       } catch (err) {
         if (ignore) return;
-        if (err instanceof ApiError && err.code === "NETWORK_ERROR") {
-          loadMockOrder();
-          return;
+        if (!isPolling) {
+          if (err instanceof ApiError && err.code === "NETWORK_ERROR") {
+            loadMockOrder();
+            return;
+          }
+          setError({
+            statusCode: err instanceof ApiError ? err.statusCode : 500,
+            code: err instanceof ApiError ? err.code : "UNKNOWN_ERROR",
+            message:
+              err instanceof ApiError
+                ? err.message
+                : "Không thể tải thông tin xác nhận đơn hàng.",
+          });
+          setIsLoading(false);
         }
-        setError({
-          statusCode: err instanceof ApiError ? err.statusCode : 500,
-          code: err instanceof ApiError ? err.code : "UNKNOWN_ERROR",
-          message:
-            err instanceof ApiError
-              ? err.message
-              : "Không thể tải thông tin xác nhận đơn hàng.",
-        });
-        setIsLoading(false);
       }
     }
+
     void loadData();
     return () => {
       ignore = true;
+      if (timer) clearTimeout(timer);
     };
   }, [orderId, loadMockOrder]);
 
@@ -199,7 +225,7 @@ export function OrderConfirmationView({ orderId }: { orderId: string }) {
     label: order.status,
     className: "bg-stone-100 text-stone-800 border-stone-300",
   };
-  const currentStepIdx = ORDER_STEPS.indexOf(order.status);
+  const currentStepIdx = getSimplifiedStepIndex(order.status);
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
@@ -305,7 +331,33 @@ export function OrderConfirmationView({ orderId }: { orderId: string }) {
               <p className="text-xs font-semibold text-stone-500 mb-3">
                 Tiến trình đơn hàng ({statusBadge.label})
               </p>
-              <div className="grid grid-cols-5 gap-1.5 text-[11px] font-semibold">
+              <div className="grid grid-cols-3 gap-2 text-xs font-semibold">
+                {SIMPLIFIED_STEPS.map((step, index) => {
+                  const isDone = index < currentStepIdx;
+                  const isCurrent = index === currentStepIdx;
+                  return (
+                    <div
+                      key={step.key}
+                      className={`py-2.5 px-2 rounded-xl border transition-all text-center ${
+                        isCurrent
+                          ? "bg-emerald-600 text-white border-emerald-700 shadow-xs"
+                          : isDone
+                            ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                            : "bg-stone-50 text-stone-400 border-stone-200"
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>{isDone ? "✓" : step.icon}</span>
+                        <span className="font-bold">{step.label}</span>
+                      </div>
+                      <div className={`mt-0.5 text-[10px] hidden sm:block ${isCurrent ? "text-emerald-100" : isDone ? "text-emerald-700" : "text-stone-400"}`}>
+                        {step.sub}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="hidden">
                 {ORDER_STEPS.map((step, index) => {
                   const isDone = index <= currentStepIdx;
                   const isCurrent = index === currentStepIdx;

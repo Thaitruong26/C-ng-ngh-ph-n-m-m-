@@ -293,6 +293,7 @@ export class IngredientsService {
 
     return {
       productId,
+
       items: items.map((i) => ({
         ingredientId: i.ingredientId,
         name: i.ingredient.name,
@@ -345,6 +346,7 @@ export class IngredientsService {
         await tx.productRecipe.createMany({
           data: dto.items.map((i) => ({
             productId,
+
             ingredientId: i.ingredientId,
             quantity: i.quantity,
           })),
