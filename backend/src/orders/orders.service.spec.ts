@@ -542,4 +542,79 @@ describe('OrdersService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
   });
+
+  describe('cancelExpiredOrders (Hạn thanh toán 15 phút)', () => {
+    it('quét các đơn PENDING quá 15 phút, hoàn kho nguyên liệu và đổi sang CANCELLED', async () => {
+      const pastDate = new Date(Date.now() - 20 * 60 * 1000); // 20 phút trước
+      const expiredOrder = {
+        id: 201,
+        userId: 1,
+        status: OrderStatus.PENDING,
+        promoCode: 'GIAM10',
+        items: [
+          {
+            id: 1,
+            productId: 1,
+            consumption: [{ ingredientId: 10, quantity: 50 }],
+          },
+        ],
+        payments: [],
+        createdAt: pastDate,
+      };
+
+      prismaMock.order.findMany.mockResolvedValue([expiredOrder]);
+      prismaMock.order.findUnique.mockResolvedValue(expiredOrder);
+      prismaMock.ingredient.update.mockResolvedValue({});
+      prismaMock.stockMovement.create.mockResolvedValue({});
+      prismaMock.promoCode.update.mockResolvedValue({});
+      prismaMock.order.update.mockResolvedValue({ ...expiredOrder, status: OrderStatus.CANCELLED });
+
+      const count = await service.cancelExpiredOrders();
+
+      expect(count).toBe(1);
+      expect(prismaMock.order.findMany).toHaveBeenCalled();
+      // Hoàn kho
+      expect(prismaMock.ingredient.update).toHaveBeenCalledWith({
+        where: { id: 10 },
+        data: { stock: { increment: 50 }, version: { increment: 1 } },
+      });
+      expect(prismaMock.stockMovement.create).toHaveBeenCalledWith({
+        data: {
+          ingredientId: 10,
+          type: 'ORDER_RELEASE',
+          quantity: 50,
+          orderId: 201,
+        },
+      });
+      // Hoàn promoCode
+      expect(prismaMock.promoCode.update).toHaveBeenCalledWith({
+        where: { code: 'GIAM10' },
+        data: { usedCount: { decrement: 1 } },
+      });
+      // Đổi status
+      expect(prismaMock.order.update).toHaveBeenCalledWith({
+        where: { id: 201 },
+        data: { status: OrderStatus.CANCELLED },
+      });
+    });
+
+    it('không hủy nếu đơn có giao dịch đang PROCESSING', async () => {
+      const pastDate = new Date(Date.now() - 20 * 60 * 1000);
+      const processingOrder = {
+        id: 202,
+        status: OrderStatus.PENDING,
+        items: [],
+        payments: [{ id: 1, status: 'PROCESSING' }],
+        createdAt: pastDate,
+      };
+
+      prismaMock.order.findMany.mockResolvedValue([processingOrder]);
+      prismaMock.order.findUnique.mockResolvedValue(processingOrder);
+
+      const count = await service.cancelExpiredOrders();
+
+      expect(count).toBe(0);
+      expect(prismaMock.order.update).not.toHaveBeenCalled();
+    });
+  });
 });

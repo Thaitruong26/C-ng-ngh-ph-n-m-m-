@@ -5,6 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
+  Optional,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -14,12 +15,17 @@ import {
   MockPaymentResult,
 } from './dto/create-payment.dto.js';
 import { assertTransition } from '../orders/order-state.js';
+import {
+  OrdersService,
+  ORDER_PAYMENT_TIMEOUT_MS,
+} from '../orders/orders.service.js';
 
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly loyaltyService: LoyaltyService,
+    @Optional() private readonly ordersService?: OrdersService,
   ) {}
 
   async createPayment(
@@ -82,6 +88,19 @@ export class PaymentsService {
       throw new BadRequestException(
         'Order is not available for payment',
       );
+    }
+
+    if (order.createdAt) {
+      const isExpired = Date.now() - new Date(order.createdAt).getTime() > ORDER_PAYMENT_TIMEOUT_MS;
+      if (isExpired) {
+        if (this.ordersService) {
+          await this.ordersService.cancelOrderInternal(order.id);
+        }
+        throw new BadRequestException({
+          code: 'ORDER_EXPIRED',
+          message: 'Đơn hàng đã hết hạn thanh toán (quá 15 phút)',
+        });
+      }
     }
 
     const activePayment = await this.prisma.payment.findFirst({

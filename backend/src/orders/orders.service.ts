@@ -3,6 +3,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { OrderStatus, Role } from '../generated/prisma/client.js';
@@ -13,18 +15,43 @@ import { assertTransition } from './order-state.js';
 import { CreateOrderDto, CreateOrderItemDto } from './dto/create-order.dto.js';
 import { GetOrdersQueryDto } from './dto/get-orders-query.dto.js';
 
+export const ORDER_PAYMENT_TIMEOUT_MINUTES = 15;
+export const ORDER_PAYMENT_TIMEOUT_MS = ORDER_PAYMENT_TIMEOUT_MINUTES * 60 * 1000;
+
 export interface UserContext {
   id: number;
   role?: string;
 }
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleInit, OnModuleDestroy {
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricingService: PricingService,
     private readonly recipeService: RecipeService,
   ) {}
+
+  onModuleInit() {
+    // Quét và tự động dọn dẹp các đơn PENDING/PAYMENT_FAILED quá 15 phút định kỳ mỗi 60s
+    this.cleanupInterval = setInterval(() => {
+      this.cancelExpiredOrders().catch((err) => {
+        console.error('Lỗi khi chạy định kỳ cancelExpiredOrders:', err);
+      });
+    }, 60 * 1000);
+
+    if (this.cleanupInterval && typeof this.cleanupInterval.unref === 'function') {
+      this.cleanupInterval.unref();
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
 
   /**
    * Task 6 & Task 10: POST /orders
@@ -176,6 +203,7 @@ export class OrdersService {
             total: newOrder.total,
             promoCode: newOrder.promoCode,
             createdAt: newOrder.createdAt.toISOString(),
+            expiresAt: new Date(newOrder.createdAt.getTime() + ORDER_PAYMENT_TIMEOUT_MS).toISOString(),
           };
         });
       } catch (err: any) {
@@ -325,6 +353,10 @@ export class OrdersService {
       })),
       createdAt: order.createdAt.toISOString(),
       updatedAt: order.updatedAt.toISOString(),
+      expiresAt:
+        order.status === OrderStatus.PENDING || order.status === OrderStatus.PAYMENT_FAILED
+          ? new Date(order.createdAt.getTime() + ORDER_PAYMENT_TIMEOUT_MS).toISOString()
+          : null,
     };
   }
 
@@ -428,6 +460,83 @@ export class OrdersService {
         message: 'Đơn hàng đã được hủy thành công',
       };
     });
+  }
+
+  /**
+   * Tự động hủy một đơn hàng hết hạn thanh toán (hệ thống thực thi, không kiểm tra quyền user).
+   */
+  async cancelOrderInternal(id: number) {
+    return await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id },
+        include: {
+          items: true,
+          payments: true,
+        },
+      });
+
+      if (!order) return null;
+      if (order.status === OrderStatus.CANCELLED) return order;
+
+      // Không hủy nếu có payment đang PROCESSING
+      const hasProcessingPayment = order.payments.some((p) => p.status === 'PROCESSING');
+      if (hasProcessingPayment) {
+        return null;
+      }
+
+      // Chỉ hủy khi ở trạng thái PENDING hoặc PAYMENT_FAILED
+      if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED) {
+        return null;
+      }
+
+      // 1. Hoàn kho nguyên liệu theo snapshot consumption
+      await this.releaseStock(tx, order);
+
+      // 2. Hoàn lại số lượt sử dụng mã giảm giá (usedCount)
+      if (order.promoCode) {
+        await tx.promoCode.update({
+          where: { code: order.promoCode },
+          data: {
+            usedCount: { decrement: 1 },
+          },
+        });
+      }
+
+      // 3. Đổi trạng thái sang CANCELLED
+      const updatedOrder = await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: OrderStatus.CANCELLED,
+        },
+      });
+
+      return updatedOrder;
+    });
+  }
+
+  /**
+   * Quét và tự động hủy các đơn hàng PENDING hoặc PAYMENT_FAILED đã quá 15 phút.
+   */
+  async cancelExpiredOrders(): Promise<number> {
+    const expiredBefore = new Date(Date.now() - ORDER_PAYMENT_TIMEOUT_MS);
+    const expiredOrders = await this.prisma.order.findMany({
+      where: {
+        status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
+        createdAt: { lt: expiredBefore },
+      },
+      select: { id: true },
+    });
+
+    let count = 0;
+    for (const item of expiredOrders) {
+      try {
+        const res = await this.cancelOrderInternal(item.id);
+        if (res) count++;
+      } catch {
+        // Tiếp tục quét các đơn khác nếu có đơn bị lỗi
+      }
+    }
+    return count;
   }
 
   /**
