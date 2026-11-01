@@ -73,9 +73,12 @@ export default function CheckoutPage() {
   const [hasToken, setHasToken] = useState<boolean>(false);
 
   useEffect(() => {
-    setMounted(true);
-    setIdempotencyKey(generateUUID());
-    setHasToken(Boolean(getAccessToken()));
+    const timer = setTimeout(() => {
+      setMounted(true);
+      setIdempotencyKey(generateUUID());
+      setHasToken(Boolean(getAccessToken()));
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   // Khi đổi phương thức thanh toán hoặc đổi mockResult sang body khác, cần key mới để tránh lỗi 422 IDEMPOTENCY_KEY_REUSED
@@ -478,6 +481,7 @@ export default function CheckoutPage() {
                             className="py-4 first:pt-0 last:pb-0 flex items-start justify-between gap-4"
                           >
                             <div className="flex items-start gap-3">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={item.imageUrl || "/img/cappuccino.jpg"}
                                 alt={item.productName}

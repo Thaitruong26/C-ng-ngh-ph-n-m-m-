@@ -105,8 +105,38 @@ export function OrderConfirmationView({ orderId }: { orderId: string }) {
   }, [orderId, loadMockOrder]);
 
   useEffect(() => {
-    fetchOrder();
-  }, [fetchOrder]);
+    let ignore = false;
+    async function loadData() {
+      try {
+        const data = await getOrderByIdApi(orderId);
+        if (!ignore) {
+          setOrder(data);
+          setError(null);
+          setIsUsingMockData(false);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        if (ignore) return;
+        if (err instanceof ApiError && err.code === "NETWORK_ERROR") {
+          loadMockOrder();
+          return;
+        }
+        setError({
+          statusCode: err instanceof ApiError ? err.statusCode : 500,
+          code: err instanceof ApiError ? err.code : "UNKNOWN_ERROR",
+          message:
+            err instanceof ApiError
+              ? err.message
+              : "Không thể tải thông tin xác nhận đơn hàng.",
+        });
+        setIsLoading(false);
+      }
+    }
+    void loadData();
+    return () => {
+      ignore = true;
+    };
+  }, [orderId, loadMockOrder]);
 
   if (isLoading) {
     return (

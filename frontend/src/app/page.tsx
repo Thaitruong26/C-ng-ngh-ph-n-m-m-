@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <div className="flex flex-col min-h-screen bg-stone-50 text-stone-900 font-sans">
@@ -8,12 +10,12 @@ export default function Home() {
             <span className="font-bold text-xl tracking-tight text-amber-900">BrewLite</span>
           </div>
           <nav className="flex items-center gap-4 text-sm font-medium">
-            <a href="/menu" className="hover:text-amber-800 transition-colors">Thực đơn</a>
-            <a href="/checkout" className="hover:text-amber-800 transition-colors">Thanh toán</a>
-            <a href="/orders/1042" className="hover:text-amber-800 transition-colors">Xác nhận đơn</a>
-            <a href="/login" className="px-4 py-2 rounded-lg bg-amber-800 text-white hover:bg-amber-900 transition-colors">
+            <Link href="/menu" className="hover:text-amber-800 transition-colors">Thực đơn</Link>
+            <Link href="/checkout" className="hover:text-amber-800 transition-colors">Thanh toán</Link>
+            <Link href="/orders/1042" className="hover:text-amber-800 transition-colors">Xác nhận đơn</Link>
+            <Link href="/login" className="px-4 py-2 rounded-lg bg-amber-800 text-white hover:bg-amber-900 transition-colors">
               Đăng nhập
-            </a>
+            </Link>
           </nav>
         </div>
       </header>
@@ -30,24 +32,24 @@ export default function Home() {
         </p>
 
         <div className="mt-8 flex flex-col sm:flex-row flex-wrap justify-center gap-4">
-          <a
+          <Link
             href="/menu"
             className="px-6 py-3 rounded-xl bg-amber-800 text-white font-medium hover:bg-amber-900 transition-all shadow-sm"
           >
             Khám phá thực đơn
-          </a>
-          <a
+          </Link>
+          <Link
             href="/checkout"
             className="px-6 py-3 rounded-xl bg-amber-100 text-amber-950 border border-amber-300 font-medium hover:bg-amber-200 transition-all shadow-sm"
           >
             Trang thanh toán (FE3)
-          </a>
-          <a
+          </Link>
+          <Link
             href="/orders/1042"
             className="px-6 py-3 rounded-xl border border-stone-300 bg-white text-stone-700 font-medium hover:bg-stone-50 transition-all shadow-sm"
           >
             Trang xác nhận đơn #1042
-          </a>
+          </Link>
           <a
             href="http://localhost:4000/api/docs"
             target="_blank"
@@ -83,4 +85,3 @@ export default function Home() {
     </div>
   );
 }
-
