@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { useCartStore, selectTotalItems } from "@/store/cart-store";
 
@@ -17,7 +17,7 @@ const NAV_LINKS = [
  * Tất cả màu sắc dùng Tailwind utility classes để đảm bảo tương phản cao
  * và không bị override bởi CSS base rules.
  */
-export function SiteHeader() {
+function SiteHeaderContent() {
   const user    = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
   const hydrate = useAuthStore((s) => s.hydrate);
@@ -121,5 +121,18 @@ export function SiteHeader() {
 
       </div>
     </header>
+  );
+}
+
+
+export function SiteHeader() {
+  return (
+    <Suspense
+      fallback={
+        <header className="sticky top-0 z-30 border-b border-[#e5e7dc] bg-[#f5f7f2]/95 backdrop-blur-md h-16" />
+      }
+    >
+      <SiteHeaderContent />
+    </Suspense>
   );
 }

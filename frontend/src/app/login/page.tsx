@@ -29,7 +29,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const result = await login(email.trim(), password);
-      const token = result.accessToken || (result as any).access_token;
+      const token = result.accessToken || (result as unknown as { access_token?: string }).access_token || "";
       setSession(token, result.user);
       const params = new URLSearchParams(window.location.search);
       const requestedPath = params.get("next");

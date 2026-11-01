@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { PaginatedResponse, Product } from "./types";
+import type { PaginatedResponse } from "./types";
 
 export interface BaristaOrderItem {
   productName: string;
@@ -12,60 +12,73 @@ export interface BaristaOrderItem {
 export interface BaristaOrder {
   id: number;
   code: string;
-  status: "PENDING" | "PAID" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
+  customerName?: string | null;
+  status: "PAID" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
   total: number;
-  customerName: string;
-  createdAt: string;
   items: BaristaOrderItem[];
+  createdAt: string;
+  updatedAt?: string;
 }
 
-/**
- * Lấy hàng đợi đơn hàng của quán (mặc định: PAID, PREPARING, READY)
- */
-export async function getBaristaOrders(status = "PAID,PREPARING,READY", page = 1, limit = 50) {
+export function getBaristaOrders(status?: string, page = 1, limit = 50) {
+  const query = new URLSearchParams();
+  if (status) query.set("status", status);
+  if (page) query.set("page", String(page));
+  if (limit) query.set("limit", String(limit));
   return apiRequest<PaginatedResponse<BaristaOrder>>(
-    `/orders?status=${encodeURIComponent(status)}&page=${page}&limit=${limit}`,
-    { authenticated: true },
-  );
-}
-
-/**
- * Barista chuyển bước đơn hàng: PAID → PREPARING → READY → COMPLETED
- */
-export async function updateOrderStatus(orderId: number, status: "PREPARING" | "READY" | "COMPLETED") {
-  return apiRequest<{ id: number; code: string; status: string }>(
-    `/orders/${orderId}/status`,
+    `/orders?${query.toString()}`,
     {
-      method: "PATCH",
-      body: { status },
       authenticated: true,
     },
   );
 }
 
-/**
- * Hủy đơn khi còn ở trạng thái PAID
- */
-export async function cancelBaristaOrder(orderId: number) {
-  return apiRequest<{ id: number; code: string; status: string; message: string }>(
-    `/orders/${orderId}/cancel`,
-    {
-      method: "POST",
-      authenticated: true,
-    },
-  );
+export function updateOrderStatus(
+  orderId: number,
+  status: "PREPARING" | "READY" | "COMPLETED",
+) {
+  return apiRequest<BaristaOrder>(`/orders/${orderId}/status`, {
+    method: "PATCH",
+    authenticated: true,
+    body: { status },
+  });
 }
 
-/**
- * Nhập thêm tồn kho cho sản phẩm
- */
-export async function addProductStock(productId: number, quantity: number, note?: string) {
-  return apiRequest<{ id: number; name: string; stock: number; inStock: boolean }>(
-    `/products/${productId}/stock`,
-    {
-      method: "POST",
-      body: { quantity, note },
-      authenticated: true,
-    },
-  );
+export function cancelBaristaOrder(orderId: number) {
+  return apiRequest<BaristaOrder>(`/orders/${orderId}/cancel`, {
+    method: "POST",
+    authenticated: true,
+  });
+}
+
+export interface ProductStockInfo {
+  id: number;
+  name: string;
+  stock: number;
+  inStock: boolean;
+  price: number;
+  category: string;
+}
+
+export function getProductsStock() {
+  return apiRequest<PaginatedResponse<ProductStockInfo>>("/products?limit=100", {
+    authenticated: true,
+  });
+}
+
+export function addProductStock(
+  productId: number,
+  quantity: number,
+  note?: string,
+) {
+  return apiRequest<{
+    id: number;
+    name: string;
+    stock: number;
+    inStock: boolean;
+  }>(`/products/${productId}/stock`, {
+    method: "POST",
+    authenticated: true,
+    body: { quantity, note },
+  });
 }

@@ -1,7 +1,7 @@
  "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, api, formatVND } from "@/lib/api";
 import { MAX_QTY_PER_ITEM, MAX_TOPPINGS, type Size, itemUnitPrice, useCartStore } from "@/store/cart";
@@ -13,7 +13,7 @@ type ProductDetail = { id: number; name: string; description?: string | null; pr
 
 const FALLBACK_IMG = "/img/ca-phe-sua.jpg";
 
-export default function ProductDetailPage() {
+function ProductDetailContent() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const { data: product, isPending, error, refetch } = useQuery({
@@ -161,4 +161,13 @@ function DetailSkeleton() {
       </div>
     </div>
   </main>;
+}
+
+
+export default function ProductDetailPage() {
+  return (
+    <Suspense fallback={<DetailSkeleton />}>
+      <ProductDetailContent />
+    </Suspense>
+  );
 }

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import {
   getBaristaOrders,
@@ -18,7 +17,6 @@ import { ApiError } from "@/lib/api/client";
 const formatVnd = (price: number) => new Intl.NumberFormat("vi-VN").format(price);
 
 export default function BaristaPage() {
-  const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const hydrate = useAuthStore((s) => s.hydrate);
 
@@ -95,15 +93,16 @@ export default function BaristaPage() {
   // Polling tự động làm mới hàng đợi mỗi 8 giây
   useEffect(() => {
     if (user?.role === "BARISTA") {
-      fetchOrders();
+      const timer = setTimeout(() => { fetchOrders(); }, 0);
       const interval = setInterval(fetchOrders, 8000);
-      return () => clearInterval(interval);
+      return () => { clearTimeout(timer); clearInterval(interval); };
     }
   }, [user, fetchOrders]);
 
   useEffect(() => {
     if (activeTab === "stock" && user?.role === "BARISTA") {
-      fetchStock();
+      const timer = setTimeout(() => { fetchStock(); }, 0);
+      return () => clearTimeout(timer);
     }
   }, [activeTab, user, fetchStock]);
 
@@ -119,7 +118,7 @@ export default function BaristaPage() {
     try {
       await updateOrderStatus(order.id, nextStatus);
       await fetchOrders();
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err instanceof ApiError ? err.message : "Thao tác thất bại, vui lòng thử lại.");
     } finally {
       setActionLoadingId(null);
@@ -135,7 +134,7 @@ export default function BaristaPage() {
     try {
       await cancelBaristaOrder(orderId);
       await fetchOrders();
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err instanceof ApiError ? err.message : "Không thể hủy đơn hàng.");
     } finally {
       setActionLoadingId(null);
@@ -155,7 +154,7 @@ export default function BaristaPage() {
       setRestockQty(20);
       setRestockNote("");
       fetchStock();
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err instanceof ApiError ? err.message : "Nhập kho thất bại.");
     } finally {
       setRestockSubmitting(false);
@@ -169,7 +168,7 @@ export default function BaristaPage() {
         (o) =>
           o.status === "PAID" &&
           (o.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            o.customerName.toLowerCase().includes(searchQuery.toLowerCase())),
+            (o.customerName || "").toLowerCase().includes(searchQuery.toLowerCase())),
       ),
     [orders, searchQuery],
   );
@@ -180,7 +179,7 @@ export default function BaristaPage() {
         (o) =>
           o.status === "PREPARING" &&
           (o.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            o.customerName.toLowerCase().includes(searchQuery.toLowerCase())),
+            (o.customerName || "").toLowerCase().includes(searchQuery.toLowerCase())),
       ),
     [orders, searchQuery],
   );
@@ -191,7 +190,7 @@ export default function BaristaPage() {
         (o) =>
           o.status === "READY" &&
           (o.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            o.customerName.toLowerCase().includes(searchQuery.toLowerCase())),
+            (o.customerName || "").toLowerCase().includes(searchQuery.toLowerCase())),
       ),
     [orders, searchQuery],
   );
@@ -458,7 +457,7 @@ export default function BaristaPage() {
                 Tồn Kho Sản Phẩm Thực Tế
               </h2>
               <p className="text-xs text-[#66736a]">
-                Server tự động trừ kho khi khách đặt đơn. Barista nhập thêm hàng mới bằng nút "Nhập Thêm".
+                Server tự động trừ kho khi khách đặt đơn. Barista nhập thêm hàng mới bằng nút &quot;Nhập Thêm&quot;.
               </p>
             </div>
           </div>

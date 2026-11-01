@@ -1,4 +1,5 @@
 import {
+  ApiErrorDetail,
   CreateOrderDto,
   CreatePaymentDto,
   OrderResponse,
@@ -224,7 +225,7 @@ export async function apiRequest<T>(
             : Array.isArray(errPayload.message)
               ? (errPayload.message as string[]).join(", ")
               : `Yêu cầu thất bại với mã HTTP ${response.status}`,
-        details: errPayload.details as any,
+        details: errPayload.details as ApiErrorDetail[] | undefined,
       },
       { replayed },
     );

@@ -14,7 +14,7 @@ export type CartItem = {
   id?: string;
   productId: number;
   name: string;
-  productName?: string;
+  productName: string;
   imageUrl: string;
   size: Size;
   sizeSurcharge: number;
@@ -125,6 +125,16 @@ export const useCartStore = create<CartState>()(
         const initialQty = clampQty(
           quantity || item.quantity || item.qty || 1,
         );
+        const sizeSurcharge =
+          item.sizeSurcharge ??
+          (item.size === "M" ? 5000 : item.size === "L" ? 10000 : 0);
+        const basePrice = item.basePrice || 0;
+        const toppings = item.toppings || [];
+        const unitPrice = itemUnitPrice({
+          basePrice,
+          sizeSurcharge,
+          toppings,
+        });
         const newItem: CartItem = {
           ...item,
           key,
@@ -135,11 +145,11 @@ export const useCartStore = create<CartState>()(
           quantity: initialQty,
           qty: initialQty,
           size: item.size,
-          sizeSurcharge: item.sizeSurcharge || (item.size === "M" ? 5000 : item.size === "L" ? 10000 : 0),
-          toppings: item.toppings || [],
+          sizeSurcharge,
+          toppings,
           toppingIds,
-          basePrice: item.basePrice || 0,
-          lineTotal: itemUnitPrice(item) * initialQty,
+          basePrice,
+          lineTotal: unitPrice * initialQty,
         };
         set({ items: [...items, newItem] });
         return true;
