@@ -77,6 +77,22 @@ describe('PaymentsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should throw BadRequestException ORDER_EXPIRED if order was created more than 15 minutes ago', async () => {
+      const expiredOrder = {
+        id: 1,
+        userId: 10,
+        total: 50000,
+        status: 'PENDING',
+        createdAt: new Date(Date.now() - 20 * 60 * 1000), // 20 phút trước
+      };
+      prisma.payment.findUnique.mockResolvedValue(null);
+      prisma.order.findUnique.mockResolvedValue(expiredOrder);
+
+      await expect(
+        service.createPayment(validDto, key, mockUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('should process payment successfully and award loyalty points', async () => {
       prisma.payment.findUnique.mockResolvedValue(null);
       prisma.order.findUnique.mockResolvedValue(mockOrder);

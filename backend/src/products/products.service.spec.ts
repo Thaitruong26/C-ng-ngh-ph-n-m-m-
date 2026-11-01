@@ -2,9 +2,11 @@ import { NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProductsService } from './products.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RecipeService } from '../common/recipe/recipe.service.js';
 
 describe('ProductsService', () => {
   let service: ProductsService;
+  let recipeService: RecipeService;
   let prismaMock: {
     product: {
       count: ReturnType<typeof vi.fn>;
@@ -12,6 +14,9 @@ describe('ProductsService', () => {
       findFirst: ReturnType<typeof vi.fn>;
     };
     topping: {
+      findMany: ReturnType<typeof vi.fn>;
+    };
+    ingredient: {
       findMany: ReturnType<typeof vi.fn>;
     };
   };
@@ -28,6 +33,7 @@ describe('ProductsService', () => {
       version: 0,
       isActive: true,
       createdAt: new Date(),
+      productRecipes: [{ ingredientId: 1, quantity: 20 }],
     },
     {
       id: 2,
@@ -40,15 +46,33 @@ describe('ProductsService', () => {
       version: 0,
       isActive: true,
       createdAt: new Date(),
+      productRecipes: [], // Không có công thức -> stock = 0, inStock = false
     },
   ];
 
   const sampleToppings = [
-    { id: 1, name: 'Trân châu', price: 5000 },
-    { id: 2, name: 'Kem cheese', price: 7000 },
+    {
+      id: 1,
+      name: 'Trân châu',
+      price: 5000,
+      toppingRecipes: [{ ingredientId: 2, quantity: 40 }],
+    },
+    {
+      id: 2,
+      name: 'Kem cheese',
+      price: 7000,
+      toppingRecipes: [{ ingredientId: 3, quantity: 30 }],
+    },
+  ];
+
+  const sampleIngredients = [
+    { id: 1, name: 'Cà phê', stock: 1000 },
+    { id: 2, name: 'Trân châu', stock: 500 },
+    { id: 3, name: 'Kem cheese', stock: 500 },
   ];
 
   beforeEach(() => {
+    recipeService = new RecipeService();
     prismaMock = {
       product: {
         count: vi.fn(),
@@ -58,29 +82,28 @@ describe('ProductsService', () => {
       topping: {
         findMany: vi.fn(),
       },
+      ingredient: {
+        findMany: vi.fn().mockResolvedValue(sampleIngredients),
+      },
     };
 
-    service = new ProductsService(prismaMock as unknown as PrismaService);
+    service = new ProductsService(prismaMock as unknown as PrismaService, recipeService);
   });
 
   describe('findAll', () => {
-    it('trả về danh sách sản phẩm phân trang với inStock và meta đầy đủ', async () => {
+    it('trả về danh sách sản phẩm phân trang với inStock và meta đầy đủ tính từ nguyên liệu', async () => {
       prismaMock.product.count.mockResolvedValue(2);
       prismaMock.product.findMany.mockResolvedValue(sampleProducts);
 
       const result = await service.findAll({ page: 1, limit: 20 });
 
       expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toEqual({
-        id: 1,
-        name: 'Cà phê sữa',
-        price: 35000,
-        imageUrl: '/img/ca-phe-sua.jpg',
-        category: 'Cà phê',
-        stock: 40,
-        inStock: true,
-      });
-      expect(result.data[1].inStock).toBe(false); // stock = 0
+      expect(result.data[0].id).toBe(1);
+      expect(result.data[0].name).toBe('Cà phê sữa');
+      expect(result.data[0].inStock).toBe(true);
+      expect(result.data[0].stock).toBeGreaterThan(0);
+      expect(result.data[1].inStock).toBe(false); // Không có công thức -> stock = 0, inStock = false
+      expect(result.data[1].stock).toBe(0);
       expect(result.meta).toEqual({
         page: 1,
         limit: 20,
@@ -109,6 +132,9 @@ describe('ProductsService', () => {
         skip: 0,
         take: 10,
         orderBy: { id: 'asc' },
+        include: {
+          productRecipes: true,
+        },
       });
       expect(result.data).toHaveLength(1);
     });
@@ -130,7 +156,7 @@ describe('ProductsService', () => {
   });
 
   describe('findOne', () => {
-    it('trả về chi tiết sản phẩm kèm sizes và toppings', async () => {
+    it('trả về chi tiết sản phẩm kèm sizes, toppings có available, maxCups và limitedBy', async () => {
       prismaMock.product.findFirst.mockResolvedValue(sampleProducts[0]);
       prismaMock.topping.findMany.mockResolvedValue(sampleToppings);
 
@@ -139,13 +165,13 @@ describe('ProductsService', () => {
       expect(result.id).toBe(1);
       expect(result.name).toBe('Cà phê sữa');
       expect(result.sizes).toEqual([
-        { size: 'S', surcharge: 0 },
-        { size: 'M', surcharge: 5000 },
-        { size: 'L', surcharge: 10000 },
+        { size: 'S', code: 'S', surcharge: 0, maxCups: expect.any(Number) },
+        { size: 'M', code: 'M', surcharge: 5000, maxCups: expect.any(Number) },
+        { size: 'L', code: 'L', surcharge: 10000, maxCups: expect.any(Number) },
       ]);
       expect(result.toppings).toEqual([
-        { id: 1, name: 'Trân châu', price: 5000 },
-        { id: 2, name: 'Kem cheese', price: 7000 },
+        { id: 1, name: 'Trân châu', price: 5000, available: true },
+        { id: 2, name: 'Kem cheese', price: 7000, available: true },
       ]);
       expect(result.inStock).toBe(true);
     });

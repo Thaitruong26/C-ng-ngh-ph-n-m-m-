@@ -35,7 +35,13 @@ export class AuthService {
     });
 
     const token = this.signToken(user.id, user.email, user.role);
-    return { user, access_token: token };
+    return {
+      user,
+      accessToken: token,
+      access_token: token,
+      tokenType: 'Bearer',
+      expiresIn: 86400,
+    };
   }
 
   /** Login with email + password */
@@ -50,7 +56,13 @@ export class AuthService {
 
     const { passwordHash: _pw, ...safeUser } = user;
     const token = this.signToken(user.id, user.email, user.role);
-    return { user: safeUser, access_token: token };
+    return {
+      user: safeUser,
+      accessToken: token,
+      access_token: token,
+      tokenType: 'Bearer',
+      expiresIn: 86400,
+    };
   }
 
   private signToken(sub: number, email: string, role: string): string {

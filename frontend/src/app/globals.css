@@ -1,31 +1,81 @@
 @import "tailwindcss";
 
+/* ── Design tokens ─────────────────────────────────────────── */
 :root {
-  --background: #fbf8ef;
+  --background: #f5f7f2;
   --foreground: #21372b;
-  --forest: #183d2c;
-  --forest-light: #e9f0e9;
-  --cream: #fbf8ef;
-  --muted: #66736a;
-  --line: #e5e7dc;
+  --forest:      #183d2c;
+  --forest-hover:#24563e;
+  --forest-light:#e9f0e9;
+  --cream:       #fbf8ef;
+  --muted:       #66736a;
+  --line:        #e5e7dc;
+  --card:        #ffffff;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.05);
+  --radius: 1rem;
 }
 
+/* Force light mode — prevent OS dark-mode inversion */
+:root, [data-theme="light"] { color-scheme: light; }
+
+/* ── Tailwind theme extension ───────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: var(--font-inter), "Segoe UI", Arial, sans-serif;
+  --font-serif: var(--font-playfair), Georgia, serif;
   --font-mono: ui-monospace, monospace;
 }
 
-* { box-sizing: border-box; }
-html { min-height: 100%; background: var(--background); }
-body {
-  min-height: 100vh;
-  margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ── Base styles (inside @layer so Tailwind utilities always win) ── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    min-height: 100%;
+    background: var(--background);
+    color-scheme: light;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+  }
+
+  /* color: inherit is fine here — Tailwind utility text-* will override it
+     because utilities live in a higher layer than @layer base.            */
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button, input, textarea, select { font: inherit; }
+  img, video { display: block; max-width: 100%; }
+
+  ::selection { background: #d7e4d7; color: var(--forest); }
 }
-button, input { font: inherit; }
-a { color: inherit; }
-::selection { background: #d7e4d7; }
+
+/* ── Utilities (scrollbar, transitions) — also inside @layer utilities
+      so they participate correctly in the Tailwind cascade.        ── */
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  /* Smooth micro-interactions — lower specificity than explicit Tailwind
+     transition-* classes so those can still override if needed.       */
+  .transition-base {
+    transition: color .15s ease, background-color .2s ease,
+                opacity .15s ease, transform .2s ease,
+                box-shadow .2s ease;
+  }
+}

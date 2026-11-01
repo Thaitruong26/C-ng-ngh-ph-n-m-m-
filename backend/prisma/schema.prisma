@@ -54,6 +54,19 @@ enum DiscountType {
   FIXED
 }
 
+enum IngredientUnit {
+  G
+  ML
+  PCS
+}
+
+enum StockMovementType {
+  ORDER_RESERVE
+  ORDER_RELEASE
+  RESTOCK
+  ADJUST
+}
+
 // =========================
 // PRODUCT
 // =========================
@@ -65,12 +78,11 @@ model Product {
   price       Int
   imageUrl    String
   category    String
-  stock       Int      @default(0)
-  version     Int      @default(0)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  orderItems OrderItem[]
+  orderItems     OrderItem[]
+  productRecipes ProductRecipe[]
 
   @@index([category])
 }
@@ -80,10 +92,11 @@ model Product {
 // =========================
 
 model Topping {
-  id       Int     @id @default(autoincrement())
-  name     String  @unique
-  price    Int
-  isActive Boolean @default(true)
+  id             Int             @id @default(autoincrement())
+  name           String          @unique
+  price          Int
+  isActive       Boolean         @default(true)
+  toppingRecipes ToppingRecipe[]
 }
 
 // =========================
@@ -101,6 +114,7 @@ model User {
 
   orders              Order[]
   loyaltyTransactions LoyaltyTransaction[]
+  stockMovements      StockMovement[]
 }
 
 // =========================
@@ -128,6 +142,7 @@ model Order {
   items              OrderItem[]
   payments           Payment[]
   loyaltyTransaction LoyaltyTransaction?
+  stockMovements     StockMovement[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -149,6 +164,10 @@ model OrderItem {
   // Snapshot topping tại thời điểm đặt hàng
   // Ví dụ: [{ "id": 1, "name": "Trân châu", "price": 5000 }]
   toppings Json @default("[]")
+
+  // Snapshot tiêu hao nguyên liệu tại thời điểm đặt hàng
+  // Ví dụ: [{ "ingredientId": 2, "quantity": 240 }]
+  consumption Json @default("[]")
 
   unitPrice Int
   qty       Int
@@ -248,3 +267,70 @@ model LoyaltyTransaction {
 
   @@index([userId])
 }
+
+// =========================
+// INGREDIENT & RECIPES
+// =========================
+
+model Ingredient {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique
+  unit         IngredientUnit
+  stock        Int            @default(0)
+  version      Int            @default(0)
+  lowThreshold Int            @default(0)
+  createdAt    DateTime       @default(now())
+
+  productRecipes ProductRecipe[]
+  toppingRecipes ToppingRecipe[]
+  stockMovements StockMovement[]
+
+  @@index([name])
+}
+
+model ProductRecipe {
+  id           Int        @id @default(autoincrement())
+  productId    Int
+  ingredientId Int
+  quantity     Int // quantity > 0 ở size M
+
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, ingredientId])
+  @@index([productId])
+  @@index([ingredientId])
+}
+
+model ToppingRecipe {
+  id           Int        @id @default(autoincrement())
+  toppingId    Int
+  ingredientId Int
+  quantity     Int // quantity > 0 cho 1 phần topping
+
+  topping    Topping    @relation(fields: [toppingId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([toppingId, ingredientId])
+  @@index([toppingId])
+  @@index([ingredientId])
+}
+
+model StockMovement {
+  id           Int               @id @default(autoincrement())
+  ingredientId Int
+  type         StockMovementType
+  quantity     Int // Âm là trừ, dương là cộng, khác 0
+  orderId      Int?
+  userId       Int?
+  reason       String?
+  createdAt    DateTime          @default(now())
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  order      Order?     @relation(fields: [orderId], references: [id])
+  user       User?      @relation(fields: [userId], references: [id])
+
+  @@index([ingredientId, createdAt])
+  @@index([orderId])
+}
+

@@ -1,6 +1,6 @@
-# BrewLite: Thiết kế API chi tiết (v1.1)
+# BrewLite: Thiết kế API chi tiết (v1.2)
 
-Tài liệu thiết kế API cho nhóm, bám theo đề bài BrewLite (NestJS + Next.js + PostgreSQL/Prisma). File này đặt tại `docs/api.md` trong repo. Muốn đổi tên trường hoặc mã lỗi thì sửa file này trong cùng PR và báo cho bên kia (BE/FE).
+Tài liệu thiết kế API cho nhóm, bám theo đề bài BrewLite (NestJS + Next.js + PostgreSQL/Prisma). File này đặt tại `docs/api.md` trong repo. Bản v1.2 thêm phần **Barista** (xem hàng đợi đơn, đổi trạng thái, nhập kho) đánh dấu **(B)**. Phần Barista nằm ngoài 10 task của đề nên chỉ làm sau khi xong phần bắt buộc.
 
 ## 1. Phạm vi và nguyên tắc thiết kế
 
@@ -39,18 +39,12 @@ Client (Next.js / Swagger) → Controller (HTTP) → Service (nghiệp vụ) →
 
 ### 2.1. Định dạng lỗi thống nhất
 
-```json
+```
 {
   "statusCode": 409,
   "code": "OUT_OF_STOCK",
   "message": "Sản phẩm 'Cappuccino' chỉ còn 2 phần",
-  "details": [
-    {
-      "productId": 3,
-      "available": 2,
-      "requested": 5
-    }
-  ],
+  "details": [{ "productId": 3, "available": 2, "requested": 5 }],
   "path": "/api/orders",
   "timestamp": "2026-10-08T09:30:00.000Z"
 }
@@ -76,7 +70,7 @@ Dùng một ExceptionFilter toàn cục để mọi lỗi đều ra dạng này.
 
 Query: page (mặc định 1), limit (mặc định 10, tối đa 50). Response:
 
-```json
+```
 { "data": [ ... ], "meta": { "page": 1, "limit": 10, "total": 27, "totalPages": 3 } }
 ```
 
@@ -176,6 +170,20 @@ Lý do chụp lại tên, topping, giá: sau này menu đổi giá thì đơn c�
 
 **LoyaltyTransaction (+)** (không bắt buộc, nên có để chứng minh cộng điểm): id, userId, orderId (unique, đảm bảo mỗi đơn chỉ cộng điểm một lần), points, createdAt.
 
+**StockMovement (B, tùy chọn)**: nhật ký kho, giúp giải thích vì sao số tồn đổi.
+
+| Cột       | Kiểu     | Ràng buộc / ghi chú |
+|-----------|----------|---------------------|
+| id        | Int      | PK, autoincrement |
+| productId | Int      | FK Product |
+| type      | Enum     | ORDER_RESERVE (trừ khi đặt), ORDER_RELEASE (hoàn khi hủy), RESTOCK (barista nhập) |
+| quantity  | Int      | Âm là trừ, dương là cộng |
+| orderId   | Int?     | FK Order, có với ORDER_RESERVE và ORDER_RELEASE |
+| userId    | Int?     | Barista nhập kho |
+| createdAt | DateTime | default now |
+
+Ghi dòng này **trong cùng transaction** với lúc đổi `Product.stock`, để nhật ký luôn khớp số tồn.
+
 ### 3.3. Quan hệ
 
 User 1—N Order, Order 1—N OrderItem, Product 1—N OrderItem, Order 1—N Payment (có thể nhiều lần thử), PromoCode liên kết với Order qua promoCode.
@@ -187,7 +195,7 @@ User 1—N Order, Order 1—N OrderItem, Product 1—N OrderItem, Order 1—N Pa
 ```
 unitPrice = product.price + sizeSurcharge[size] + tổng(topping.price)
 lineTotal = unitPrice × qty
-subtotal = tổng(lineTotal)
+subtotal  = tổng(lineTotal)
 ```
 
 | Size | Phụ thu |
@@ -204,6 +212,10 @@ Topping mẫu: Trân châu +5.000, Kem cheese +7.000, Thạch +4.000.
 
 - **Giữ hàng ngay khi tạo đơn** (POST /orders), không đợi thanh toán.
 
+- **Trừ kho luôn do server tự làm** khi tạo đơn. Barista không trừ kho bằng tay, vì như vậy dễ quên hoặc trừ sai.
+
+- **Nhập kho (B)** do barista làm qua `POST /products/:id/stock` (mục 6.16): cộng dồn số lượng, không ghi đè.
+
 - **Hoàn kho** khi đơn chuyển sang CANCELLED.
 
 - Đơn PAYMENT_FAILED vẫn giữ hàng (khách có thể thử lại), cho đến khi hủy.
@@ -212,16 +224,16 @@ Topping mẫu: Trân châu +5.000, Kem cheese +7.000, Thạch +4.000.
 
 Thuật toán trừ kho cho mỗi sản phẩm (trong một transaction, **sắp xếp theo productId tăng dần** để tránh deadlock):
 
-```ts
+```
 // Chạy trong prisma.$transaction; nếu ném STOCK_RETRY thì thử lại CẢ giao dịch
 const r = await tx.product.updateMany({
   where: { id, version: current.version, stock: { gte: qty } },
-  data: { stock: { decrement: qty }, version: { increment: 1 } },
+  data:  { stock: { decrement: qty }, version: { increment: 1 } },
 });
 if (r.count === 0) {
   const now = await tx.product.findUnique({ where: { id } });
-  if (now.stock < qty) throw OUT_OF_STOCK; // thật sự hết hàng: dừng ngay
-  throw STOCK_RETRY; // còn hàng nhưng version đã đổi: thử lại
+  if (now.stock < qty) throw OUT_OF_STOCK;  // thật sự hết hàng: dừng ngay
+  throw STOCK_RETRY;                        // còn hàng nhưng version đã đổi: thử lại
 }
 ```
 
@@ -233,8 +245,8 @@ Mã hợp lệ khi **đồng thời**: isActive, nằm trong \[startsAt, expires
 
 ```
 PERCENT: discount = min( floor(subtotal × value / 100), maxDiscount ?? ∞ )
-FIXED: discount = min( value, subtotal )
-total = subtotal − discount
+FIXED:   discount = min( value, subtotal )
+total    = subtotal − discount
 ```
 
 Tăng usedCount bằng updateMany có điều kiện usedCount \< usageLimit trong cùng transaction tạo đơn để tránh vượt giới hạn khi đặt đồng thời.
@@ -257,31 +269,27 @@ Tăng usedCount bằng updateMany có điều kiện usedCount \< usageLimit tro
 | PAYMENT_FAILED | PAID            | Thử thanh toán lại thành công          |
 | PAYMENT_FAILED | CANCELLED       | Khách hủy                              |
 | PAID           | PREPARING       | Barista nhận đơn                       |
-| PAID           | CANCELLED       | Khách/barista hủy (cần hoàn tiền mock) |
+| PAID           | CANCELLED       | Khách hoặc barista hủy khi chưa pha (hoàn tiền mock, hoàn kho) |
 | PREPARING      | READY           | Barista pha xong                       |
-| READY          | COMPLETED       | Giao cho khách                         |
+| READY          | COMPLETED       | Barista giao cho khách                 |
 
 COMPLETED và CANCELLED là trạng thái kết thúc. Mọi chuyển khác đều bị chặn.
 
 Hiện thực bằng một bảng cấu hình và một hàm thuần (dễ unit test):
 
-```ts
+```
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ['PAID', 'PAYMENT_FAILED', 'CANCELLED'],
+  PENDING:        ['PAID', 'PAYMENT_FAILED', 'CANCELLED'],
   PAYMENT_FAILED: ['PAID', 'CANCELLED'],
-  PAID: ['PREPARING', 'CANCELLED'],
-  PREPARING: ['READY'],
-  READY: ['COMPLETED'],
-  COMPLETED: [],
-  CANCELLED: [],
+  PAID:           ['PREPARING', 'CANCELLED'],
+  PREPARING:      ['READY'],
+  READY:          ['COMPLETED'],
+  COMPLETED:      [],
+  CANCELLED:      [],
 };
-
 export function assertTransition(from: OrderStatus, to: OrderStatus) {
   if (!TRANSITIONS[from].includes(to))
-    throw new ConflictException({
-      code: 'INVALID_TRANSITION',
-      message: `Không thể chuyển ${from} → ${to}`,
-    });
+    throw new ConflictException({ code: 'INVALID_TRANSITION', message: `Không thể chuyển ${from} → ${to}` });
 }
 ```
 
@@ -307,6 +315,9 @@ Ký hiệu xác thực: 🔓 công khai, 🔒 cần JWT, 🔒B cần JWT role BA
 | 12  | POST   | /payments                | 🔒   | 8, 10 | Thanh toán idempotent       |
 | 13  | PATCH  | /orders/:id/status (+)   | 🔒B  | 10    | Barista đổi trạng thái      |
 | 14  | GET    | /health (+)              | 🔓   | 1, 9  | Kiểm tra server sống        |
+| 15  | GET    | /orders (B)              | 🔒B  | mở rộng | Hàng đợi đơn của cửa hàng |
+| 16  | POST   | /products/:id/stock (B)  | 🔒B  | mở rộng | Nhập thêm kho             |
+| 17  | GET    | /products/:id/stock-movements (B) | 🔒B | mở rộng | Lịch sử nhập, trừ, hoàn kho (tùy chọn) |
 
 Các dòng (+) không có trong bảng 12.1 của đề nhưng cần thiết để hoàn thành luồng và demo Task 10.
 
@@ -322,25 +333,13 @@ Các dòng (+) không có trong bảng 12.1 của đề nhưng cần thiết đ�
 
 **Response 200:**
 
-```json
+```
 {
   "data": [
-    {
-      "id": 1,
-      "name": "Cà phê sữa",
-      "price": 35000,
-      "imageUrl": "/img/ca-phe-sua.jpg",
-      "category": "Cà phê",
-      "stock": 40,
-      "inStock": true
-    }
+    { "id": 1, "name": "Cà phê sữa", "price": 35000, "imageUrl": "/img/ca-phe-sua.jpg",
+      "category": "Cà phê", "stock": 40, "inStock": true }
   ],
-  "meta": {
-    "page": 1,
-    "limit": 20,
-    "total": 8,
-    "totalPages": 1
-  }
+  "meta": { "page": 1, "limit": 20, "total": 8, "totalPages": 1 }
 }
 ```
 
@@ -356,42 +355,13 @@ Các dòng (+) không có trong bảng 12.1 của đề nhưng cần thiết đ�
 
 **Response 200:** thêm mô tả và các tùy chọn để frontend dựng trang chi tiết mà không cần hardcode.
 
-```json
+```
 {
-  "id": 3,
-  "name": "Cappuccino",
-  "description": "Espresso, sữa nóng và lớp bọt sữa",
-  "price": 45000,
-  "imageUrl": "/img/cappuccino.jpg",
-  "category": "Cà phê",
-  "stock": 25,
-  "inStock": true,
-  "sizes": [
-    {
-      "size": "S",
-      "surcharge": 0
-    },
-    {
-      "size": "M",
-      "surcharge": 5000
-    },
-    {
-      "size": "L",
-      "surcharge": 10000
-    }
-  ],
-  "toppings": [
-    {
-      "id": 1,
-      "name": "Trân châu",
-      "price": 5000
-    },
-    {
-      "id": 2,
-      "name": "Kem cheese",
-      "price": 7000
-    }
-  ]
+  "id": 3, "name": "Cappuccino", "description": "Espresso, sữa nóng và lớp bọt sữa",
+  "price": 45000, "imageUrl": "/img/cappuccino.jpg", "category": "Cà phê",
+  "stock": 25, "inStock": true,
+  "sizes": [ { "size": "S", "surcharge": 0 }, { "size": "M", "surcharge": 5000 }, { "size": "L", "surcharge": 10000 } ],
+  "toppings": [ { "id": 1, "name": "Trân châu", "price": 5000 }, { "id": 2, "name": "Kem cheese", "price": 7000 } ]
 }
 ```
 
@@ -405,7 +375,7 @@ Trả mảng \[{ id, name, price }\] các topping isActive. Có thể bỏ endpo
 
 **Body:**
 
-```json
+```
 { "email": "an@example.com", "password": "Passw0rd!", "fullName": "Nguyễn Văn An" }
 ```
 
@@ -419,7 +389,7 @@ Trả mảng \[{ id, name, price }\] các topping isActive. Có thể bỏ endpo
 
 **Response 201** (không có passwordHash):
 
-```json
+```
 { "id": 12, "email": "an@example.com", "fullName": "Nguyễn Văn An", "role": "CUSTOMER", "loyaltyPoints": 0 }
 ```
 
@@ -433,18 +403,12 @@ Trả mảng \[{ id, name, price }\] các topping isActive. Có thể bỏ endpo
 
 **Response 200:**
 
-```json
+```
 {
   "accessToken": "eyJhbGciOiJIUzI1NiIs...",
   "tokenType": "Bearer",
   "expiresIn": 86400,
-  "user": {
-    "id": 12,
-    "email": "an@example.com",
-    "fullName": "Nguyễn Văn An",
-    "role": "CUSTOMER",
-    "loyaltyPoints": 0
-  }
+  "user": { "id": 12, "email": "an@example.com", "fullName": "Nguyễn Văn An", "role": "CUSTOMER", "loyaltyPoints": 0 }
 }
 ```
 
@@ -460,24 +424,12 @@ Cho frontend xem trước số tiền giảm ở trang giỏ hàng, không ghi d
 
 **Body:**
 
-```json
+```
 {
   "code": "BREW10",
   "items": [
-    {
-      "productId": 3,
-      "size": "M",
-      "toppingIds": [
-        1
-      ],
-      "quantity": 1
-    },
-    {
-      "productId": 4,
-      "size": "L",
-      "toppingIds": [],
-      "quantity": 2
-    }
+    { "productId": 3, "size": "M", "toppingIds": [1], "quantity": 1 },
+    { "productId": 4, "size": "L", "toppingIds": [], "quantity": 2 }
   ]
 }
 ```
@@ -486,7 +438,7 @@ items có cùng quy tắc validate như POST /orders.
 
 **Response 200:**
 
-```json
+```
 { "code": "BREW10", "type": "PERCENT", "value": 10, "subtotal": 123000, "discountAmount": 12300, "totalAfterDiscount": 110700 }
 ```
 
@@ -498,24 +450,11 @@ Tạo đơn ở trạng thái PENDING từ giỏ hàng, đồng thời **giữ t
 
 **Body:**
 
-```json
+```
 {
   "items": [
-    {
-      "productId": 3,
-      "size": "M",
-      "toppingIds": [
-        1
-      ],
-      "quantity": 1
-    },
-    {
-      "productId": 4,
-      "size": "L",
-      "toppingIds": [],
-      "quantity": 2,
-      "note": "ít đá"
-    }
+    { "productId": 3, "size": "M", "toppingIds": [1], "quantity": 1 },
+    { "productId": 4, "size": "L", "toppingIds": [], "quantity": 2, "note": "ít đá" }
   ],
   "promoCode": "BREW10"
 }
@@ -547,33 +486,16 @@ Tạo đơn ở trạng thái PENDING từ giỏ hàng, đồng thời **giữ t
 
 **Response 201:**
 
-```json
+```
 {
-  "id": 1042,
-  "code": "#1042",
-  "status": "PENDING",
+  "id": 1042, "code": "#1042", "status": "PENDING",
   "items": [
-    {
-      "productId": 3,
-      "productName": "Cappuccino",
-      "size": "M",
-      "toppings": [
-        {
-          "id": 1,
-          "name": "Trân châu",
-          "price": 5000
-        }
-      ],
-      "unitPrice": 55000,
-      "qty": 1,
-      "lineTotal": 55000
-    }
+    { "productId": 3, "productName": "Cappuccino", "size": "M",
+      "toppings": [{ "id": 1, "name": "Trân châu", "price": 5000 }],
+      "unitPrice": 55000, "qty": 1, "lineTotal": 55000 }
   ],
-  "subtotal": 123000,
-  "discountAmount": 12300,
-  "total": 110700,
-  "promoCode": "BREW10",
-  "createdAt": "2026-10-08T09:30:00.000Z"
+  "subtotal": 123000, "discountAmount": 12300, "total": 110700,
+  "promoCode": "BREW10", "createdAt": "2026-10-08T09:30:00.000Z"
 }
 ```
 
@@ -585,24 +507,13 @@ Tạo đơn ở trạng thái PENDING từ giỏ hàng, đồng thời **giữ t
 
 Chỉ trả đơn của req.user.id, sắp xếp createdAt giảm dần.
 
-```json
+```
 {
   "data": [
-    {
-      "id": 1042,
-      "code": "#1042",
-      "status": "PAID",
-      "total": 110700,
-      "itemCount": 3,
-      "createdAt": "2026-10-08T09:30:00.000Z"
-    }
+    { "id": 1042, "code": "#1042", "status": "PAID", "total": 110700, "itemCount": 3,
+      "createdAt": "2026-10-08T09:30:00.000Z" }
   ],
-  "meta": {
-    "page": 1,
-    "limit": 10,
-    "total": 1,
-    "totalPages": 1
-  }
+  "meta": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 }
 }
 ```
 
@@ -642,7 +553,7 @@ Không có body. Chủ đơn (hoặc barista) hủy đơn.
 
 **Body:**
 
-```json
+```
 { "orderId": 1042, "method": "WALLET" }
 ```
 
@@ -686,23 +597,11 @@ Không có body. Chủ đơn (hoặc barista) hủy đơn.
 
 **Response 201 (thanh toán thành công):**
 
-```json
+```
 {
-  "payment": {
-    "id": 77,
-    "orderId": 1042,
-    "amount": 110700,
-    "method": "WALLET",
-    "status": "SUCCESS",
-    "providerRef": "MOCK-8F2A91"
-  },
-  "order": {
-    "id": 1042,
-    "code": "#1042",
-    "status": "PAID",
-    "total": 110700,
-    "pointsEarned": 110
-  }
+  "payment": { "id": 77, "orderId": 1042, "amount": 110700, "method": "WALLET",
+               "status": "SUCCESS", "providerRef": "MOCK-8F2A91" },
+  "order": { "id": 1042, "code": "#1042", "status": "PAID", "total": 110700, "pointsEarned": 110 }
 }
 ```
 
@@ -722,19 +621,72 @@ Không có body. Chủ đơn (hoặc barista) hủy đơn.
 | Đơn đang có thanh toán khác xử lý, hoặc cùng key chạy quá 3 giây | 409                              | PAYMENT_IN_PROGRESS      |
 | Gateway từ chối                                                  | 402                              | PAYMENT_FAILED           |
 
-### 6.13. PATCH /orders/:id/status 🔒B (+) (Task 10)
+### 6.13. PATCH /orders/:id/status 🔒B (+) (Task 10, dùng cho trang Barista)
 
-Chức năng barista nằm ngoài MVP, nhưng cần endpoint này để **demo và test state machine** (PAID → PREPARING → READY → COMPLETED).
+Barista đưa đơn đi tiếp trên đường PAID → PREPARING → READY → COMPLETED. Dùng cho trang Barista, và cũng dùng để demo state machine bằng Swagger.
 
-**Body:** { "status": "PREPARING" }. Chỉ nhận PREPARING, READY, COMPLETED (hủy dùng 6.11, thanh toán dùng 6.12).
+**Body:** `{ "status": "PREPARING" }`. Chỉ nhận PREPARING, READY, COMPLETED (hủy dùng 6.11, thanh toán dùng 6.12).
 
-**Xử lý:** assertTransition(order.status, body.status) rồi cập nhật. **Response 200:** đơn đã cập nhật. **Lỗi:** 403 nếu không phải BARISTA; 404; 409 INVALID_TRANSITION.
+**Xử lý:** khóa dòng đơn, `assertTransition(order.status, body.status)`, cập nhật `status`. Hai barista bấm cùng lúc một đơn thì người đến sau nhận 409 INVALID_TRANSITION (đơn đã sang bước khác).
 
-Seed sẵn một tài khoản barista (barista@brewlite.com) để demo.
+**Response 200:** đơn đã cập nhật. **Lỗi:** 401; 403 nếu không phải BARISTA; 404 ORDER_NOT_FOUND; 409 INVALID_TRANSITION.
+
+Seed sẵn tài khoản barista (barista@brewlite.com / Barista@123).
 
 ### 6.14. GET /health 🔓 (+)
 
 Trả { "status": "ok", "db": "up" } sau khi chạy thử SELECT 1. Dùng cho Docker healthcheck ở Task 9.
+
+### 6.15. GET /orders 🔒B (B)
+
+Hàng đợi đơn cho barista. Khác `GET /orders/me` (chỉ đơn của mình), endpoint này trả đơn của **mọi khách**.
+
+**Query:**
+
+| Tham số     | Kiểu   | Mặc định | Ghi chú |
+|-------------|--------|----------|---------|
+| status      | string | PAID,PREPARING,READY | Một hoặc nhiều OrderStatus, cách nhau bằng dấu phẩy. Đơn PENDING chưa trả tiền nên không hiện mặc định |
+| page, limit | int    | 1, 20    | limit tối đa 50 |
+
+Sắp xếp `createdAt` **tăng dần** (đơn cũ nhất lên đầu, đúng thứ tự phục vụ).
+
+```json
+{
+  "data": [
+    {
+      "id": 1042, "code": "#1042", "status": "PAID", "total": 110700,
+      "customerName": "Nguyễn Văn A", "createdAt": "2026-10-08T09:30:00.000Z",
+      "items": [
+        { "productName": "Cappuccino", "size": "M", "qty": 2,
+          "toppings": [{ "name": "Trân châu" }], "note": "ít đá" }
+      ]
+    }
+  ],
+  "meta": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 }
+}
+```
+
+**Lỗi:** 400 status không hợp lệ; 401; 403 nếu không phải BARISTA.
+
+### 6.16. POST /products/:id/stock 🔒B (B)
+
+Barista nhập thêm hàng. **Cộng dồn**, không ghi đè, để hai người nhập cùng lúc không đè số của nhau.
+
+**Body:** `{ "quantity": 20, "note": "Nhập hàng buổi sáng" }`. `quantity` là số nguyên từ 1 đến 1000, `note` tùy chọn.
+
+**Xử lý (một transaction):**
+
+1. Tìm sản phẩm (không có thì 404 PRODUCT_NOT_FOUND).
+2. Cập nhật nguyên tử: `stock + quantity`, `version + 1`. Tăng `version` để đơn đang đặt song song đọc lại tồn kho mới.
+3. Nếu có bảng `StockMovement` (mục 3.2): ghi một dòng `type = RESTOCK`, `quantity = +20`, `userId` của barista.
+
+**Response 200:** `{ "id": 3, "name": "Cà phê muối", "stock": 25, "inStock": true }`
+
+**Lỗi:** 400 VALIDATION_ERROR (quantity không phải số nguyên 1–1000); 401; 403; 404 PRODUCT_NOT_FOUND.
+
+### 6.17. GET /products/:id/stock-movements 🔒B (B, tùy chọn)
+
+Lịch sử biến động kho của một sản phẩm, mới nhất trước, có phân trang `{data, meta}`. Mỗi dòng: `type` (ORDER_RESERVE, ORDER_RELEASE, RESTOCK), `quantity` (âm là trừ, dương là cộng), `orderId?`, `userId?`, `createdAt`. Chỉ làm nếu có bảng `StockMovement`.
 
 ## 7. Bảng mã lỗi nghiệp vụ
 
@@ -771,25 +723,27 @@ Trả { "status": "ok", "db": "up" } sau khi chạy thử SELECT 1. Dùng cho Do
 | 3      | 9    | GET /orders/me, GET /orders/:id, Docker Compose, README                                      |
 | 3      | 10   | State machine, idempotency, optimistic locking, PromoCode, loyalty, cancel, PATCH status     |
 
+| Mở rộng | B | GET /orders, POST /products/:id/stock, (tùy chọn) stock-movements; Frontend trang /barista |
+
 **Gợi ý:** viết Task 6 và Task 8 sao cho dễ nâng cấp, ví dụ tách PricingService.calculate(), reserveStock(), applyPromo() thành hàm riêng ngay từ đầu để Task 10 chỉ cần thay ruột.
 
 ## 9. Cấu trúc module NestJS gợi ý
 
 ```
 backend/src/
-├── main.ts          # ValidationPipe, CORS, Swagger, prefix 'api'
-├── prisma/          # PrismaModule, PrismaService
+├── main.ts                  # ValidationPipe, CORS, Swagger, prefix 'api'
+├── prisma/                  # PrismaModule, PrismaService
 ├── common/
 │   ├── filters/all-exceptions.filter.ts
 │   ├── decorators/current-user.decorator.ts
-│   ├── guards/roles.guard.ts
-│   └── pricing/     # pricing.service.ts, pricing.module.ts, pricing.constants.ts
-├── products/        # controller, service, dto/
+│   ├── guards/roles.guard.ts   # @Roles('BARISTA') cho các endpoint (B)
+│   └── pricing/  (pricing.service.ts, pricing.module.ts, pricing.constants.ts)
+├── products/   (controller, service, dto/)
 ├── toppings/
-├── auth/            # controller, service, jwt.strategy, jwt-auth.guard, dto/
+├── auth/       (controller, service, jwt.strategy, jwt-auth.guard, dto/)
 ├── promotions/
-├── orders/          # controller, service, dto/, order-state.ts
-├── payments/        # controller, service, mock-payment.service.ts, dto/
+├── orders/     (controller, service, dto/, order-state.ts)
+├── payments/   (controller, service, mock-payment.service.ts, dto/)
 └── health/
 ```
 
@@ -845,7 +799,7 @@ Dùng một CSDL Postgres riêng cho test (database brewlite_test trong cùng co
 | Giá có đổi theo size không?                        | Có: S +0, M +5.000, L +10.000 (wireframe cho thấy không đổi, cần xác nhận)                                                                                                                                                      |
 | Mock payment làm đến mức nào?                      | Hàm giả lập trong NestJS, có mockResult để ép thành công hoặc thất bại                                                                                                                                                          |
 | Hủy đơn đã PAID có hoàn tiền không?                | Có, ghi nhận mock, không có bảng Refund                                                                                                                                                                                         |
-| Chức năng barista                                  | Chỉ có PATCH /orders/:id/status để demo state machine                                                                                                                                                                           |
+| Chức năng barista | Có trang Barista (mở rộng, làm sau phần bắt buộc): xem hàng đợi, đổi trạng thái, nhập kho |
 | Giữ hàng từ lúc nào?                               | Từ lúc POST /orders, hoàn khi CANCELLED                                                                                                                                                                                         |
 | Mã giảm giá dùng được mấy lần mỗi người?           | Không giới hạn theo user, chỉ giới hạn tổng usageLimit                                                                                                                                                                          |
 | Đơn PENDING và PAYMENT_FAILED có tự hết hạn không? | Không (giới hạn MVP): kho chỉ hoàn khi hủy chủ động. Nếu còn thời gian, thêm expiresAt và cron tự hủy sau 15 phút                                                                                                               |
@@ -874,7 +828,7 @@ Cả 7 endpoint và 5 thực thể trong mục 12 của đề đều có trong t
 | POST /promotions/validate | Không       | Thêm     | Xem trước số tiền giảm ở trang giỏ hàng (Task 10)                                    |
 | GET /orders/:id           | Không       | Thêm     | Màn hình xác nhận và chi tiết đơn (Task 9)                                           |
 | POST /orders/:id/cancel   | Không       | Thêm     | Cần để có chuyển tiếp sang CANCELLED (Task 10)                                       |
-| PATCH /orders/:id/status  | Không       | Thêm     | Cần để demo PAID đến COMPLETED, vì barista nằm ngoài MVP (Task 10)                   |
+| PATCH /orders/:id/status  | Không       | Thêm     | Barista đổi trạng thái; cũng dùng để demo state machine (Task 10)                   |
 | GET /health               | Không       | Thêm     | Healthcheck cho Docker (Task 1, 9)                                                   |
 
 ### 12.2. Thực thể (đối chiếu mục 12.2 của đề)
@@ -916,3 +870,14 @@ Cả 7 endpoint và 5 thực thể trong mục 12 của đề đều có trong t
 - Sơ đồ trạng thái của đề có ba mũi tên hủy nhưng không ghi rõ xuất phát từ đâu; mình suy ra là PENDING, PAYMENT_FAILED và PAID.
 
 - Nếu thiếu thời gian, có thể cắt mà không mất yêu cầu nào của đề: GET /toppings, GET /auth/me, POST /promotions/validate, LoyaltyTransaction, GET /health. Nên giữ PATCH /orders/:id/status và cancel để demo được state machine.
+
+Đề ghi chức năng nhân viên quầy là phần mở rộng ngoài MVP, nên các mục (B) không tính điểm 10 task. Chỉ làm sau khi xong các mục bắt buộc.
+
+### 12.6. Quản lý kho theo công thức nguyên liệu (v1.3)
+
+Chi tiết đặc tả đầy đủ xem tại `apicongthuc.md`:
+- Chuyển toàn bộ kho từ số ly `Product.stock` sang nguyên liệu `Ingredient.stock` và công thức `ProductRecipe`, `ToppingRecipe`.
+- Bổ sung nhóm API nguyên liệu 🔒B: `GET /ingredients`, `POST /ingredients`, `PATCH /ingredients/:id`, `POST /ingredients/:id/stock`, `POST /ingredients/:id/adjust`, `GET /ingredients/:id/movements`.
+- Bổ sung nhóm API công thức 🔒B: `GET/PUT /products/:id/recipe`, `GET/PUT /toppings/:id/recipe`.
+- Nâng cấp `POST /orders` và `POST /orders/:id/cancel` trừ kho và hoàn kho theo snapshot nguyên liệu `OrderItem.consumption`.
+- Xóa bỏ các cột cũ `Product.stock` và `Product.version`.

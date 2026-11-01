@@ -1,11 +1,56 @@
 services:
   db:
     image: postgres:16
+    container_name: brewlite-db
+    restart: always
     environment:
       POSTGRES_USER: brewlite
       POSTGRES_PASSWORD: brewlite
       POSTGRES_DB: brewlite
-    ports: ["5433:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brewlite -d brewlite"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: brewlite-backend
+    restart: always
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://brewlite:brewlite@db:5432/brewlite"
+      JWT_SECRET: "brewlite-super-secret-jwt-key-2026"
+      JWT_EXPIRES_IN: "1d"
+      CORS_ORIGIN: "http://localhost:3000,http://localhost:3001"
+    ports:
+      - "4000:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:4000/api"
+    container_name: brewlite-frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:4000/api"
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
 volumes:
   pgdata:

@@ -4,11 +4,15 @@ import {
   SIZE_SURCHARGE,
   type SizeKey,
 } from '../common/pricing/pricing.constants.js';
+import { RecipeService } from '../common/recipe/recipe.service.js';
 import type { GetProductsDto } from './dto/get-products.dto.js';
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly recipeService: RecipeService,
+  ) {}
 
   async findAll(dto: GetProductsDto) {
     const page = dto.page ?? 1;
@@ -37,28 +41,41 @@ export class ProductsService {
       };
     }
 
-    const [total, items] = await Promise.all([
+    const [total, items, ingredients] = await Promise.all([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
         where,
         skip,
         take: limit,
         orderBy: { id: 'asc' },
+        include: {
+          productRecipes: true,
+        },
+      }),
+      this.prisma.ingredient.findMany({
+        select: { id: true, name: true, stock: true },
       }),
     ]);
 
+    const stockMap = new Map<number, number>(ingredients.map((i) => [i.id, i.stock]));
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
     return {
-      data: items.map((p) => ({
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        imageUrl: p.imageUrl,
-        category: p.category,
-        stock: p.stock,
-        inStock: p.stock > 0,
-      })),
+      data: items.map((p) => {
+        const productRef = { id: p.id, recipes: p.productRecipes };
+        const stock = this.recipeService.maxCups(productRef, 'S', stockMap);
+        const inStock = stock > 0;
+
+        return {
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          imageUrl: p.imageUrl,
+          category: p.category,
+          stock,
+          inStock,
+        };
+      }),
       meta: {
         page,
         limit,
@@ -69,9 +86,24 @@ export class ProductsService {
   }
 
   async findOne(id: number) {
-    const product = await this.prisma.product.findFirst({
-      where: { id, isActive: true },
-    });
+    const [product, toppings, ingredients] = await Promise.all([
+      this.prisma.product.findFirst({
+        where: { id, isActive: true },
+        include: {
+          productRecipes: true,
+        },
+      }),
+      this.prisma.topping.findMany({
+        where: { isActive: true },
+        include: {
+          toppingRecipes: true,
+        },
+        orderBy: { id: 'asc' },
+      }),
+      this.prisma.ingredient.findMany({
+        select: { id: true, name: true, stock: true },
+      }),
+    ]);
 
     if (!product) {
       throw new NotFoundException({
@@ -81,19 +113,29 @@ export class ProductsService {
       });
     }
 
-    const toppings = await this.prisma.topping.findMany({
-      where: { isActive: true },
-      select: {
-        id: true,
-        name: true,
-        price: true,
-      },
-      orderBy: { id: 'asc' },
-    });
+    const stockMap = new Map<number, number>(ingredients.map((i) => [i.id, i.stock]));
+    const ingNameMap = new Map<number, string>(ingredients.map((i) => [i.id, i.name]));
+
+    const productRef = { id: product.id, recipes: product.productRecipes };
+    const stock = this.recipeService.maxCups(productRef, 'S', stockMap);
+    const inStock = stock > 0;
+    const bottleneck = this.recipeService.getBottleneck(productRef, 'S', stockMap, ingNameMap);
 
     const sizes = (Object.keys(SIZE_SURCHARGE) as SizeKey[]).map((size) => ({
       size,
+      code: size,
       surcharge: SIZE_SURCHARGE[size],
+      maxCups: this.recipeService.maxCups(productRef, size, stockMap),
+    }));
+
+    const toppingsWithAvailability = toppings.map((t) => ({
+      id: t.id,
+      name: t.name,
+      price: t.price,
+      available: this.recipeService.isToppingAvailable(
+        { id: t.id, recipes: t.toppingRecipes },
+        stockMap,
+      ),
     }));
 
     return {
@@ -103,10 +145,11 @@ export class ProductsService {
       price: product.price,
       imageUrl: product.imageUrl,
       category: product.category,
-      stock: product.stock,
-      inStock: product.stock > 0,
+      stock,
+      inStock,
+      limitedBy: bottleneck.limitedBy,
       sizes,
-      toppings,
+      toppings: toppingsWithAvailability,
     };
   }
 }

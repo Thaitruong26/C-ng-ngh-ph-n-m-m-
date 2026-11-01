@@ -1,5 +1,7 @@
+
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCartStore, selectTotalItems } from "@/store/cart-store";
@@ -43,7 +45,7 @@ const NAV_ITEMS = [
   },
 ];
 
-export function BottomNav() {
+function BottomNavContent() {
   const pathname = usePathname();
   const totalItems = useCartStore(selectTotalItems);
 
@@ -56,6 +58,7 @@ export function BottomNav() {
         {NAV_ITEMS.map(({ href, label, icon }) => {
           const active = pathname === href || (href === "/menu" && pathname === "/");
           const isCart = href === "/cart";
+
           return (
             <Link
               key={href}
@@ -83,5 +86,13 @@ export function BottomNav() {
         })}
       </div>
     </nav>
+  );
+}
+
+export function BottomNav() {
+  return (
+    <Suspense fallback={null}>
+      <BottomNavContent />
+    </Suspense>
   );
 }
